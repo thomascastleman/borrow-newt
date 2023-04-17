@@ -93,12 +93,32 @@ pred statementReachable[to: Statement, from: Statement] {
     // TODO:
 }
 
+no cycles[s: Statement] {
+    //no statement that is reachable from s and s is reachable from it (no cycles)
+    no a: Statement | {
+        reachable[s, a, next]
+        reachable[a, s, next]
+    }
+}
+
 // ============================== Program Structure ==============================
 
 // All statements in the program (including nested scopes) follow a linear structure.
 //Ria
 pred sequentialStatements[p: Program] {
-    // TODO:
+    // TODO: does it need to use is linear?
+    no cycles[p.first_statement]
+    all s: Statement | s in p.first_statement.next => {
+        reachable[s, p.first_statement, next] //is this redundant idk @Thomas
+        // //no statement that is reachable from s and s is reachable from it (no cycles)
+        no cycles[s]
+    }
+    all scope_statement: Scope | scope_statement in p.first_statement.next => {
+        no cycles[scope_statement.statement]
+    }
+    all var_dec: DeclareVariable | var_dec in p.first_statement.next => {
+        no cycles[var_dec.variable_scope]
+    }
 }
 
 // Checks that variable use is preceded by initialization and declaration.
@@ -111,6 +131,11 @@ pred varInitAndDecl[p: Program] {
 //Ria
 pred onlyMutateMutableVars[p: Program] {
     // TODO:
+    //for all variables such that there is some update of it implies it was mutable 
+    //does this do what I think it does? @Thomas
+    all v: Variable | {
+        some update: UpdateVariable => some v.mutable
+    }
 }
 
 pred validProgramStructure[p: Program] {
