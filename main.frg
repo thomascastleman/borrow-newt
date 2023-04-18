@@ -84,13 +84,19 @@ sig Move extends Statement {
 }
 
 sig Scope extends Statement {
+    // FIXME: I urge us to rename this field
     statement: lone Statement
 }
 
 
-// Thomas
-pred statementReachable[to: Statement, from: Statement] {
-    // TODO:
+// Determines if there is a path through the program from the start statement
+// to the target statement, by following either the sequence of statements or 
+// stepping into inner scopes.
+pred statementReachable[target: Statement, start: Statement] {
+    // The target is reachable by following either next (for sequential statements),
+    // variable_scope (for inner scopes of variable declarations), or
+    // statement (for other inner scopes).
+    reachable[target, start, next, variable_scope, statement]
 }
 
 no cycles[s: Statement] {
@@ -121,10 +127,31 @@ pred sequentialStatements[p: Program] {
     }
 }
 
+// Enforces that all statements are part of the program (reachable from the program start).
+pred allStatementsInProgram[p: Program] {
+    all s: Statement | statementReachable[s, p.first_statement]
+}
+
+// Determines if the given variable is being "used" in the given statement.
+// NOTE: Excludes declaration and initialization.
+pred variableUse[variable: Variable, statement: Statement] {
+    statement.updated_variable = variable or    // Being reassigned to
+    statement.source = variable or              // Being moved out of
+    statement.destination = variable            // Being moved into
+}
+
 // Checks that variable use is preceded by initialization and declaration.
-// Thomas
-pred varInitAndDecl[p: Program] {
-    // TODO:
+pred variableDeclThenInitThenUsed[p: Program] {
+    all v: Variable | {
+        all use: Statement | variableUse[v, use] implies {
+            some decl: DeclareVariable, init: InitializeVariable | {
+                decl.declared_variable = v      // v is declared
+                init.initialized_variable = v   // v is initialized
+                statementReachable[init, decl]  // Initialization is preceded by declaration
+                statementReachable[use, init]   // Use is preceded by initialization
+            }
+        }
+    }
 }
 
 // Variables that are mutated must be declared mutable.
@@ -139,8 +166,9 @@ pred onlyMutateMutableVars[p: Program] {
 }
 
 pred validProgramStructure[p: Program] {
+    allStatementsInProgram[p]
     sequentialStatements[p]
-    varInitAndDecl[p]
+    variableDeclThenInitThenUsed[p]
     onlyMutateMutableVars[p]
 }
 
@@ -164,4 +192,5 @@ pred lifetimesCorrect[p: Program] {
 
 run {
     validProgramStructure[Program]
-} for exactly 1 Program, exactly 2 Statement
+    some v: Variable, s: Statement | variableUse[v, s]
+} for exactly 1 Program
