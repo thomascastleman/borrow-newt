@@ -1,7 +1,7 @@
 #lang forge "final" "jWRoVmMudTkyxClS"
 
 one sig Program {
-    first_statement: lone Statement
+    program_start: lone Statement
 }
 
 // A lifetime describes a region of the program for which a value is "live" (in use).
@@ -55,7 +55,7 @@ sig DeclareVariable extends Statement {
     declared_variable: one Variable,
     // The scope is the sequence of Statements for which the variable is valid.
     // NOTE: This is the first statement of that sequence, which links to the next, etc.
-    variable_scope: lone Statement
+    variable_scope_start: lone Statement
 }
 
 // A variable initialization to some value. E.g. `a = &b;`
@@ -83,9 +83,8 @@ sig Move extends Statement {
     destination: lone Variable
 }
 
-sig Scope extends Statement {
-    // FIXME: I urge us to rename this field
-    statement: lone Statement
+sig CurlyBraces extends Statement {
+    curly_braces_start: lone Statement
 }
 
 
@@ -94,43 +93,27 @@ sig Scope extends Statement {
 // stepping into inner scopes.
 pred statementReachable[target: Statement, start: Statement] {
     // The target is reachable by following either next (for sequential statements),
-    // variable_scope (for inner scopes of variable declarations), or
-    // statement (for other inner scopes).
-    reachable[target, start, next, variable_scope, statement]
+    // variable_scope_start (for inner scopes of variable declarations), or
+    // curly_braces_start (for other inner scopes).
+    reachable[target, start, next, variable_scope_start, curly_braces_start]
 }
 
-no cycles[s: Statement] {
-    //no statement that is reachable from s and s is reachable from it (no cycles)
-    no a: Statement | {
-        reachable[s, a, next]
-        reachable[a, s, next]
-    }
+// No statement is reachable from itself (no cycles)
+pred noCycles {
+    no s: Statement | statementReachable[s, s]
 }
 
 // ============================== Program Structure ==============================
 
 // All statements in the program (including nested scopes) follow a linear structure.
-//Ria
 pred sequentialStatements[p: Program] {
-    // TODO: does it need to use is linear?
-    no cycles[p.first_statement]
-    all s: Statement | s in p.first_statement.next => {
-        reachable[s, p.first_statement, next] //is this redundant idk @Thomas
-        // //no statement that is reachable from s and s is reachable from it (no cycles)
-        no cycles[s]
-    }
-    all scope_statement: Scope | scope_statement in p.first_statement.next => {
-        no cycles[scope_statement.statement]
-    }
-    all var_dec: DeclareVariable | var_dec in p.first_statement.next => {
-        no cycles[var_dec.variable_scope]
-    }
+    // There are no cycles in the chain of statements
+    noCycles
+
+    // All statements are part of the program (reachable from the program start)
+    all s: Statement | (s != p.program_start => statementReachable[s, p.program_start])
 }
 
-// Enforces that all statements are part of the program (reachable from the program start).
-pred allStatementsInProgram[p: Program] {
-    all s: Statement | statementReachable[s, p.first_statement]
-}
 
 // Determines if the given variable is being "used" in the given statement.
 // NOTE: Excludes declaration and initialization.
@@ -155,18 +138,14 @@ pred variableDeclThenInitThenUsed[p: Program] {
 }
 
 // Variables that are mutated must be declared mutable.
-//Ria
 pred onlyMutateMutableVars[p: Program] {
-    // TODO:
     //for all variables such that there is some update of it implies it was mutable 
-    //does this do what I think it does? @Thomas
     all v: Variable | {
-        some update: UpdateVariable => some v.mutable
+        (some update: UpdateVariable | update.updated_variable = v) => some v.mutable
     }
 }
 
 pred validProgramStructure[p: Program] {
-    allStatementsInProgram[p]
     sequentialStatements[p]
     variableDeclThenInitThenUsed[p]
     onlyMutateMutableVars[p]
@@ -192,5 +171,4 @@ pred lifetimesCorrect[p: Program] {
 
 run {
     validProgramStructure[Program]
-    some v: Variable, s: Statement | variableUse[v, s]
 } for exactly 1 Program
