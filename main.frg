@@ -162,17 +162,70 @@ pred onlyMutateMutableVars[p: Program] {
     }
 }
 
-// TODO: Variable declarations should be unique
-// TODO: Initialization should be unique
-// TODO: every variable should be declared 
-// TODO: constrain enter and exit scope
+// TODO: Variable declarations should be unique (Thomas)
+// TODO: Initialization should be unique (Ria)
+// TODO: every variable should be declared (Ria)
+// TODO: only one end of program (only one statement has no exit_Scope and no s.next) (Ria)
+// TODO: declare variable cannot have a next (Ria)
+
+// TODO: Maybe add some predicates to eliminate extraneous sigs from the instances,
+// for instance, variable/lifetimes floating around that aren't part of the program. (Thomas)
+
+// Constrains the enter_scope field to only be valid for declarations and curly brace statements.
+pred enterScopeValid {
+    all d: DeclareVariable | {
+        no d.next
+    }
+
+    all i: InitializeVariable | {
+        no i.enter_scope
+    }
+
+    all m: Move | {
+        no m.enter_scope
+    }
+
+    all u: UpdateVariable | {
+        no u.enter_scope
+    }
+}
+
+// Constrains the exit_scope field to point to the next statement of the 
+// smallest containing scope.
+pred exitScopeValid {
+    all s: Statement | {
+        // There is some statement that creates a scope that this statement is within,
+        // and we use that statement's next as the exit_scope for this statement.
+        some s.exit_scope => (some containingScope: Statement | { 
+            statementReachableNoExit[s, containingScope]
+            some containingScope.enter_scope
+            some containingScope.next
+
+            // There is no scope that is smaller that contains this statement
+            no smallerContainingScope: Statement | {
+                statementReachableNoExit[smallerContainingScope, containingScope]
+                statementReachableNoExit[s, smallerContainingScope]
+                some smallerContainingScope.enter_scope
+                some smallerContainingScope.next
+            }
+
+            // The exit scope of this statement will be the statement that comes
+            // after the containing scope
+            s.exit_scope = containingScope.next
+
+            // A statement can have a next, or an exit_scope, but not both
+            no s.next
+        })
+    }
+}
 
 pred validProgramStructure[p: Program] {
+    enterScopeValid
+    exitScopeValid
     sequentialStatements[p]
     variableDeclThenInitThenUsed[p]
     onlyMutateMutableVars[p]
 }
-// TODO: declare variable cannot have a next
 
 // ============================== Lifetimes ==============================
 
@@ -213,9 +266,9 @@ pred borrowMutLifetimes[bm: BorrowMut] {
 // - Once you move out of a variable, you cannot use it (it becomes uninitialized)
 // - You can only construct an exclusive reference (&mut) to a variable that is declared mut
 
-// TODO: Maybe add some predicates to eliminate extraneous sigs from the instances,
-// for instance, variable/lifetimes floating around that aren't part of the program.
-
 run {
     validProgramStructure[Program]
+
+    // Uncomment this to look for instances that utilize exit_scope
+    // some s: Statement | some s.exit_scope
 } for exactly 1 Program
