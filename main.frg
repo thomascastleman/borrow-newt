@@ -46,16 +46,20 @@ sig BorrowMut extends Value {
 abstract sig Statement {
     // Each Statement has a link to the Statement that follows it. Statements
     // appearing at the end of scopes will have no `next`.
-    next: lone Statement
+    next: lone Statement,
+    
+    //Only used for DeclareVariable and Scope statements
+    enter_scope: lone Statement,
+
+    // Only used for statements occurring at the end of a scope - this will point 
+    // to the next statement outside the scope(s).
+    exit_scope: lone Statement
 }
 
 // A variable declaration. E.g., `let a;`
 sig DeclareVariable extends Statement {
     // The variable being declared
-    declared_variable: one Variable,
-    // The scope is the sequence of Statements for which the variable is valid.
-    // NOTE: This is the first statement of that sequence, which links to the next, etc.
-    variable_scope_start: lone Statement
+    declared_variable: one Variable
 }
 
 // A variable initialization to some value. E.g. `a = &b;`
@@ -84,10 +88,7 @@ sig Move extends Statement {
 }
 
 // A block statement, which creates a new scope.
-sig CurlyBraces extends Statement {
-    // First statement of the new scope
-    curly_braces_start: lone Statement
-}
+sig CurlyBraces extends Statement {}
 
 
 // Determines if there is a path through the program from the start statement
@@ -97,8 +98,15 @@ pred statementReachable[target: Statement, start: Statement] {
     // The target is reachable by following either next (for sequential statements),
     // variable_scope_start (for inner scopes of variable declarations), or
     // curly_braces_start (for other inner scopes).
-    reachable[target, start, next, variable_scope_start, curly_braces_start]
+    reachable[target, start, next, enter_scope, exit_scope]
 }
+
+// Determines if target is reachable from start by only following next (sequential
+// statements) and enter_scope (for going into nested scopes).
+pred statementReachableNoExit[target: Statement, start: Statement] {
+    reachable[target, start, next, enter_scope]
+}
+
 
 // ============================== Program Structure ==============================
 
@@ -112,28 +120,35 @@ pred sequentialStatements[p: Program] {
 }
 
 // Determines if the given variable is being "used" in the given statement.
-// NOTE: Excludes declaration and initialization.
+// NOTE: Excludes declaration and initialization, because if initializing 
+// is considered use, and use before initialization is illegal, then 
+// you can never initialize.
 pred variableUse[variable: Variable, statement: Statement] {
     statement.updated_variable = variable or    // Being reassigned to
     statement.source = variable or              // Being moved out of
     statement.destination = variable            // Being moved into
 }
 
-// FIXME: This program will be prevented by the pred below, but should be valid.
-// let a; 
-// {
-//     a = 0;
-// }
-// println!("{}", a);
 // Checks that variable use is preceded by initialization and declaration.
 pred variableDeclThenInitThenUsed[p: Program] {
     all v: Variable | {
-        all use: Statement | variableUse[v, use] implies {
-            some decl: DeclareVariable, init: InitializeVariable | {
-                decl.declared_variable = v      // v is declared
-                init.initialized_variable = v   // v is initialized
-                statementReachable[init, decl]  // Initialization is preceded by declaration
-                statementReachable[use, init]   // Use is preceded by initialization
+        some decl: DeclareVariable, init: InitializeVariable | {
+            decl.declared_variable = v      // v is declared
+            init.initialized_variable = v   // v is initialized
+
+            // The initialization is in the scope of this variable.
+            // NOTE: This is necessary in addition to the above constraint, 
+            // because initializations are not considered uses.
+            statementReachableNoExit[init, decl]
+
+            all use: Statement | variableUse[v, use] implies {
+                // Use is preceded by initialization
+                statementReachable[use, init]
+
+                // All uses of the variable are within the scope of that variable
+                // NOTE: We use NoExit here, because we do not want to exit scopes 
+                // when finding a path from declaration to use.
+                statementReachableNoExit[use, decl]
             }
         }
     }
@@ -148,6 +163,9 @@ pred onlyMutateMutableVars[p: Program] {
 }
 
 // TODO: Variable declarations should be unique
+// TODO: Initialization should be unique
+// TODO: every variable should be declared 
+// TODO: constrain enter and exit scope
 
 pred validProgramStructure[p: Program] {
     sequentialStatements[p]
