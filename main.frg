@@ -147,11 +147,14 @@ pred onlyMutateMutableVars[p: Program] {
     }
 }
 
+// TODO: Variable declarations should be unique
+
 pred validProgramStructure[p: Program] {
     sequentialStatements[p]
     variableDeclThenInitThenUsed[p]
     onlyMutateMutableVars[p]
 }
+// TODO: declare variable cannot have a next
 
 // ============================== Lifetimes ==============================
 
@@ -160,7 +163,8 @@ pred validProgramStructure[p: Program] {
 // that the lifetimes are correct so that they may be used in analysis.
 pred lifetimesCorrect[p: Program] {
     // TODO: 
-    //go through all values to check values lifetimes (Owned, Borrow, Borrow Mut)
+    // - Go through all values to check values lifetimes (Owned, Borrow, Borrow Mut)
+    // - Lifetimes should be unique (not shared between multiple values)
 }
 
 // For owned values, the lifetime extends from initialization until either:
