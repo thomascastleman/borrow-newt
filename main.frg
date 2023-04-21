@@ -163,13 +163,42 @@ pred onlyMutateMutableVars[p: Program] {
 }
 
 // TODO: Variable declarations should be unique (Thomas)
-// TODO: Initialization should be unique (Ria)
-// TODO: every variable should be declared (Ria)
-// TODO: only one end of program (only one statement has no exit_Scope and no s.next) (Ria)
-// TODO: declare variable cannot have a next (Ria)
+// Initialization should be unique (Ria)
+// every variable should be declared (Ria)
+// only one end of program (only one statement has no exit_Scope and no s.next) (Ria)
+// declare variable cannot have a next (Ria) -- didnt do this cuz it is in enter scope valid should we leave it there @Thomas
 
 // TODO: Maybe add some predicates to eliminate extraneous sigs from the instances,
 // for instance, variable/lifetimes floating around that aren't part of the program. (Thomas)
+
+// For every variable, there should be at most one InitializeVariable statement for that variable. 
+// Everthing else should be considered an update
+pred uniqueInitialization {
+    all v: Variable | {
+        (some initialize: InitializeVariable | initialize.initialized_variable = v) => ({
+            no other_initialize: InitializeVariable | {
+                other_initialize != initialize
+                other_initialize.initialized_variable = v
+            }
+        })
+    }
+}
+
+// Every variable has been declared exactly once
+pred everyVariableDeclared {
+    all v: Variable | {
+        one declare: DeclareVariable | declare.declared_variable = v
+    }
+}
+
+//There is only one statement that has no next and no exit scope, which means that it is the end of the program
+pred onlyOneEndOfProgram {
+    one s: Statement | {
+        no s.next
+        no s.exit_scope
+    }
+}
+
 
 // Constrains the enter_scope field to only be valid for declarations and curly brace statements.
 pred enterScopeValid {
@@ -215,6 +244,7 @@ pred exitScopeValid {
 
             // A statement can have a next, or an exit_scope, but not both
             no s.next
+
         })
     }
 }
