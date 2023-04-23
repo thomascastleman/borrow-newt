@@ -111,12 +111,12 @@ pred statementReachableNoExit[target: Statement, start: Statement] {
 // ============================== Program Structure ==============================
 
 // All statements in the program (including nested scopes) follow a linear structure.
-pred sequentialStatements[p: Program] {
+pred sequentialStatements {
     // There are no cycles in the chain of statements (no statement is reachable from itself)
     no s: Statement | statementReachable[s, s]
 
     // All statements are part of the program (reachable from the program start)
-    all s: Statement | (s != p.program_start => statementReachable[s, p.program_start])
+    all s: Statement | (s != Program.program_start => statementReachable[s, Program.program_start])
 }
 
 // Determines if the given variable is being "used" in the given statement.
@@ -139,7 +139,7 @@ pred variableUse[variable: Variable, statement: Statement] {
 }
 
 // Checks that variable use is preceded by initialization and declaration.
-pred variableDeclThenInitThenUsed[p: Program] {
+pred variableDeclThenInitThenUsed {
     all v: Variable | {
         some decl: DeclareVariable, init: InitializeVariable | {
             decl.declared_variable = v      // v is declared
@@ -164,7 +164,7 @@ pred variableDeclThenInitThenUsed[p: Program] {
 }
 
 // Variables that are mutated must be declared mutable.
-pred onlyMutateMutableVars[p: Program] {
+pred onlyMutateMutableVars {
     //for all variables such that there is some update of it implies it was mutable 
     all v: Variable | {
         (some update: UpdateVariable | update.updated_variable = v) => some v.mutable
@@ -194,10 +194,22 @@ pred allObjectsParticipating {
     }
 }
 
-// TODO: Initialization should be unique (Ria)
-// TODO: every variable should be declared (Ria)
-// TODO: only one end of program (only one statement has no exit_Scope and no s.next) (Ria)
-// TODO: declare variable cannot have a next (Ria)
+// For every variable, there should be at most one InitializeVariable statement 
+// for that variable, though it is not required to be initialized.
+// Everthing else should be considered an update
+pred uniqueInitialization {
+    all v: Variable | {
+        lone initialize: InitializeVariable | initialize.initialized_variable = v
+    }
+}
+
+//There is only one statement that has no next and no exit scope, which means that it is the end of the program
+pred onlyOneEndOfProgram {
+    one s: Statement | {
+        no s.next
+        no s.exit_scope
+    }
+}
 
 // FIXME: Our rules around scoping are still not correct. enter_scope / exit_scope / next
 
@@ -251,17 +263,20 @@ pred exitScopeValid {
 
             // A statement can have a next, or an exit_scope, but not both
             no s.next
+
         })
     }
 }
 
-pred validProgramStructure[p: Program] {
+pred validProgramStructure {
     enterScopeValid
     exitScopeValid
-    sequentialStatements[p]
-    variableDeclThenInitThenUsed[p]
-    onlyMutateMutableVars[p]
+    sequentialStatements
+    variableDeclThenInitThenUsed
+    onlyMutateMutableVars
     allObjectsParticipating
+    onlyOneEndOfProgram
+    uniqueInitialization
 }
 
 // ============================== Lifetimes ==============================
@@ -269,7 +284,7 @@ pred validProgramStructure[p: Program] {
 // Enforces that all lifetimes have been determined following the rules.
 // NOTE: This does NOT check that the program borrow checks, but only ensures
 // that the lifetimes are correct so that they may be used in analysis.
-pred lifetimesCorrect[p: Program] {
+pred lifetimesCorrect {
     // TODO: 
     // - Go through all values to check values lifetimes (Owned, Borrow, Borrow Mut)
     // - Lifetimes should be unique (not shared between multiple values)
@@ -304,7 +319,7 @@ pred borrowMutLifetimes[bm: BorrowMut] {
 // - You can only construct an exclusive reference (&mut) to a variable that is declared mut
 
 run {
-    validProgramStructure[Program]
+    validProgramStructure
 
     // Uncomment this to look for instances that utilize exit_scope
     // some s: Statement | some s.exit_scope
