@@ -126,7 +126,16 @@ pred sequentialStatements[p: Program] {
 pred variableUse[variable: Variable, statement: Statement] {
     statement.updated_variable = variable or    // Being reassigned to
     statement.source = variable or              // Being moved out of
-    statement.destination = variable            // Being moved into
+    statement.destination = variable or         // Being moved into
+
+    // Account for uses of variables that are embedded in values, e.g. &mut a
+    (some value: Value | {
+        // This value is part of this statement
+        (statement.initial_value = value) or (statement.new_value = value) or (statement.moved_value = value)
+
+        // The value uses the variable
+        (value.borrow_referent = variable) or (value.borrow_mut_referent = variable)
+    })
 }
 
 // Checks that variable use is preceded by initialization and declaration.
@@ -162,31 +171,58 @@ pred onlyMutateMutableVars[p: Program] {
     }
 }
 
-// TODO: Variable declarations should be unique (Thomas)
+// Ensures that all objects in the instance are actually being used in the program.
+// It prevents "floating" objects from cluttering up our instances.
+pred allObjectsParticipating {
+    // All lifetimes correspond to exactly one value. This eliminates lifetimes
+    // that are not tied to any value, and ensures that each value gets its own lifetime.
+    all lifetime: Lifetime | {
+        one value: Value | value.value_lifetime = lifetime
+    }
+    // All variables in the instance are declared in the program exactly once.
+    // This eliminates variables that do not participate in the program, and 
+    // ensures that the same variable isn't declared more than once.
+    all variable: Variable | {
+        one decl: DeclareVariable | decl.declared_variable = variable
+    }
+    // All values are used in some statement. This eliminates values that 
+    // aren't actually part of the program.
+    all value: Value | {
+        some s: Statement | {
+            (s.initial_value = value) or (s.new_value = value) or (s.moved_value = value)
+        }
+    }
+}
+
 // TODO: Initialization should be unique (Ria)
 // TODO: every variable should be declared (Ria)
 // TODO: only one end of program (only one statement has no exit_Scope and no s.next) (Ria)
 // TODO: declare variable cannot have a next (Ria)
 
-// TODO: Maybe add some predicates to eliminate extraneous sigs from the instances,
-// for instance, variable/lifetimes floating around that aren't part of the program. (Thomas)
+// FIXME: Our rules around scoping are still not correct. enter_scope / exit_scope / next
 
 // Constrains the enter_scope field to only be valid for declarations and curly brace statements.
 pred enterScopeValid {
-    all d: DeclareVariable | {
-        no d.next
-    }
+    // Variable declarations cannot have a "next" statement, as all statements that
+    // occur afterwards are subsumed in their scope (accessible via enter_scope).
+    all d: DeclareVariable | no d.next
 
-    all i: InitializeVariable | {
-        no i.enter_scope
-    }
+    // Only declarations and curly brace statements can create nested scopes
+    all i: InitializeVariable   | no i.enter_scope
+    all m: Move                 | no m.enter_scope
+    all u: UpdateVariable       | no u.enter_scope
 
-    all m: Move | {
-        no m.enter_scope
-    }
-
-    all u: UpdateVariable | {
-        no u.enter_scope
+    // No statement is both the `next` and `enter_scope` of some other statements.
+    // This is because:
+    //  - The only way to enter a new scope is via enter_scope, so a statement
+    //    cannot be accessible via next if it is the first in a new scope
+    //  - If a statement is accessible by next, then it is not the first in a 
+    //    new scope and thus shouldn't be accessible by enter_scope
+    no s: Statement | {
+        some prev, containing: Statement | {
+            prev.next = s
+            containing.enter_scope = s
+        }
     }
 }
 
@@ -225,6 +261,7 @@ pred validProgramStructure[p: Program] {
     sequentialStatements[p]
     variableDeclThenInitThenUsed[p]
     onlyMutateMutableVars[p]
+    allObjectsParticipating
 }
 
 // ============================== Lifetimes ==============================
