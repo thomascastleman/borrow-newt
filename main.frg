@@ -101,19 +101,25 @@ pred statementReachableOnlyNext[target: Statement, start: Statement] {
     reachable[target, start, next]
 }
 
-pred isBefore[s1: Statement, s2: Statement] {
+// Checks if the `before` statement occurs strictly earlier in the program than the `after` statement.
+pred isBefore[earlier: Statement, later: Statement] {
     // Statement cannot be before itself
-    s1 != s2
+    earlier != later
 
-    // EITHER: You can directly reach s2 by traversing down the tree from s1
-    (statementReachable[s2, s1] or 
+    // EITHER: You can directly reach `later` by traversing down the tree from `earlier`
+    (statementReachable[later, earlier] or 
 
-    // OR: There is a "common ancestor" statement, from which s1 can be reached
-    // by entering inner scopes, and s2 can be reached at the same scope level (only via next)
+    // OR: You can "back up" the tree to some "common ancestor" statement whose 
+    // scope contains the `earlier` statement, and occurs before the `later`.
     (some commonAncestor: Statement | {
-        not statementReachableOnlyNext[s1, commonAncestor]
-        statementReachable[s1, commonAncestor]
-        statementReachableOnlyNext[s2, commonAncestor]
+        // The common ancestor is a containing scope for `earlier`
+        some commonAncestor.inner_scope
+        (statementReachable[earlier, commonAncestor.inner_scope] or 
+        earlier = commonAncestor.inner_scope)
+
+        // The common ancestor happens strictly before the `later`, and
+        // `later` is not part of the common ancestor's inner scope.
+        some commonAncestor.next and statementReachable[later, commonAncestor.next]
     }))
 }
 
@@ -123,19 +129,9 @@ pred isBetween[middle: Statement, start: Statement, end: Statement] {
     middle != start
     middle != end
 
+    // The middle is contained between the start/end, by being after the start and before the end.
     isBefore[start, middle]
     isBefore[middle, end]
-
-    // FIXME: Remove this if the above works
-    // // The middle should be reachable from the start (it occurs after the start)
-    // statementReachable[middle, start] 
-
-    // // The middle should NOT be reachable from the end. If this is the case,
-    // // the end is necessarily after the middle.
-    // // NOTE: The end is not necessarily reachable from the end, given the
-    // // tree structure of our programs.
-    // not statementReachable[middle, end]
-
 }
 
 // Determines if a given statement is between a start and end, inclusive of the bounds.
@@ -250,7 +246,7 @@ pred uniqueInitialization {
 }
 
 // Constrains the inner_scope field to only be valid for declarations and curly brace statements.
-pred enterScopeValid {
+pred innerScopeValid {
     // Variable declarations cannot have a "next" statement, as all statements that
     // occur afterwards are subsumed in their scope (accessible via inner_scope).
     all d: DeclareVariable | no d.next
@@ -260,16 +256,14 @@ pred enterScopeValid {
     all m: Move                 | no m.inner_scope
     all u: UpdateVariable       | no u.inner_scope
 
-    // No statement is both the `next` and `inner_scope` of some other statements.
-    // This is because:
-    //  - The only way to enter a new scope is via inner_scope, so a statement
-    //    cannot be accessible via next if it is the first in a new scope
-    //  - If a statement is accessible by next, then it is not the first in a 
-    //    new scope and thus shouldn't be accessible by inner_scope
-    no s: Statement | {
-        some prev, containing: Statement | {
-            prev.next = s
-            containing.inner_scope = s
+    // Every statement is the first statement of at most one scope
+    all s, outer: Statement | {
+        (outer.inner_scope = s) => {
+            // No statement at all has this one as its `next` 
+            no s.~next
+
+            // No *other* statement has this as its inner scope
+            no other: Statement | (other != outer and other.inner_scope = s)
         }
     }
 }
@@ -305,7 +299,7 @@ pred correctMoveValue {
 }
 
 pred validProgramStructure {
-    enterScopeValid
+    innerScopeValid
     sequentialStatements
     variableDeclThenInitThenUsed
     onlyMutateMutableVars
