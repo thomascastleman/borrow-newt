@@ -48,7 +48,7 @@ abstract sig Statement {
     // appearing at the end of scopes will have no `next`.
     next: lone Statement,
     
-    //Only used for DeclareVariable and Scope statements
+    // Only used for DeclareVariable and Scope statements
     enter_scope: lone Statement,
 
     // Only used for statements occurring at the end of a scope - this will point 
@@ -107,6 +107,31 @@ pred statementReachableNoExit[target: Statement, start: Statement] {
     reachable[target, start, next, enter_scope]
 }
 
+// Determines if the target is reachabel from start only following next.
+// This allows for reachability between statements in the exact same scope.
+pred statementReachableNextOnly[target: Statement, start: Statement] {
+    reachable[target, start, next]
+}
+
+// Determines if a given statement is between a start and end statement, exclusive.
+pred between[middle: Statement, start: Statement, end: Statement] {
+    // The middle should be reachable from the start (it occurs after the start)
+    statementReachable[middle, start] 
+
+    // The middle should NOT be reachable from the end. If this is the case,
+    // the end is necessarily after the middle.
+    // NOTE: The end is not necessarily reachable from the end, given the
+    // tree structure of our programs.
+    not statementReachable[middle, end]
+}
+
+// Determines if a given statement is between a start and end, inclusive of the bounds.
+pred betweenInclusive[middle: Statement, start: Statement, end: Statement] {
+    middle = start or 
+    middle = end or
+    between[middle, start, end]
+}
+
 
 // ============================== Program Structure ==============================
 
@@ -114,6 +139,11 @@ pred statementReachableNoExit[target: Statement, start: Statement] {
 pred sequentialStatements {
     // There are no cycles in the chain of statements (no statement is reachable from itself)
     no s: Statement | statementReachable[s, s]
+
+    // Statements are the `next` of at MOST one other statement
+    all s: Statement | {
+        lone prev: Statement | prev.next = s
+    }
 
     // All statements are part of the program (reachable from the program start)
     all s: Statement | (s != Program.program_start => statementReachable[s, Program.program_start])
@@ -242,6 +272,22 @@ pred enterScopeValid {
 // smallest containing scope.
 pred exitScopeValid {
     all s: Statement | {
+
+        // For all statements that create an inner scope AND are followed by some statement
+        (some s.enter_scope and some s.next) => {
+            some innerScopeEnd: Statement | {
+                // The end has a path out (via exit_scope) to the next statement 
+                // after the creator of this scope
+                innerScopeEnd.exit_scope = s.next
+                no innerScopeEnd.next 
+
+                // The end is directly inside this scope
+                statementReachableNextOnly[innerScopeEnd, s.enter_scope] or innerScopeEnd = s.enter_scope
+            }
+        }
+
+        // FIXME: This doesn't actually require any statement to have an exit_scope
+
         // There is some statement that creates a scope that this statement is within,
         // and we use that statement's next as the exit_scope for this statement.
         some s.exit_scope => (some containingScope: Statement | { 
