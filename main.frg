@@ -49,11 +49,7 @@ abstract sig Statement {
     next: lone Statement,
     
     // Only used for DeclareVariable and Scope statements
-    enter_scope: lone Statement,
-
-    // Only used for statements occurring at the end of a scope - this will point 
-    // to the next statement outside the scope(s).
-    exit_scope: lone Statement
+    inner_scope: lone Statement
 }
 
 // A variable declaration. E.g., `let a;`
@@ -98,38 +94,55 @@ pred statementReachable[target: Statement, start: Statement] {
     // The target is reachable by following either next (for sequential statements),
     // variable_scope_start (for inner scopes of variable declarations), or
     // curly_braces_start (for other inner scopes).
-    reachable[target, start, next, enter_scope, exit_scope]
+    reachable[target, start, next, inner_scope]
 }
 
-// Determines if target is reachable from start by only following next (sequential
-// statements) and enter_scope (for going into nested scopes).
-pred statementReachableNoExit[target: Statement, start: Statement] {
-    reachable[target, start, next, enter_scope]
-}
-
-// Determines if the target is reachabel from start only following next.
-// This allows for reachability between statements in the exact same scope.
-pred statementReachableNextOnly[target: Statement, start: Statement] {
+pred statementReachableOnlyNext[target: Statement, start: Statement] {
     reachable[target, start, next]
 }
 
-// Determines if a given statement is between a start and end statement, exclusive.
-pred between[middle: Statement, start: Statement, end: Statement] {
-    // The middle should be reachable from the start (it occurs after the start)
-    statementReachable[middle, start] 
+pred isBefore[s1: Statement, s2: Statement] {
+    // Statement cannot be before itself
+    s1 != s2
 
-    // The middle should NOT be reachable from the end. If this is the case,
-    // the end is necessarily after the middle.
-    // NOTE: The end is not necessarily reachable from the end, given the
-    // tree structure of our programs.
-    not statementReachable[middle, end]
+    // EITHER: You can directly reach s2 by traversing down the tree from s1
+    (statementReachable[s2, s1] or 
+
+    // OR: There is a "common ancestor" statement, from which s1 can be reached
+    // by entering inner scopes, and s2 can be reached at the same scope level (only via next)
+    (some commonAncestor: Statement | {
+        not statementReachableOnlyNext[s1, commonAncestor]
+        statementReachable[s1, commonAncestor]
+        statementReachableOnlyNext[s2, commonAncestor]
+    }))
+}
+
+// Determines if a given statement is between a start and end statement, exclusive.
+pred isBetween[middle: Statement, start: Statement, end: Statement] {
+    // The middle is not at the endpoints (this is exclusive)
+    middle != start
+    middle != end
+
+    isBefore[start, middle]
+    isBefore[middle, end]
+
+    // FIXME: Remove this if the above works
+    // // The middle should be reachable from the start (it occurs after the start)
+    // statementReachable[middle, start] 
+
+    // // The middle should NOT be reachable from the end. If this is the case,
+    // // the end is necessarily after the middle.
+    // // NOTE: The end is not necessarily reachable from the end, given the
+    // // tree structure of our programs.
+    // not statementReachable[middle, end]
+
 }
 
 // Determines if a given statement is between a start and end, inclusive of the bounds.
-pred betweenInclusive[middle: Statement, start: Statement, end: Statement] {
+pred isBetweenInclusive[middle: Statement, start: Statement, end: Statement] {
     middle = start or 
     middle = end or
-    between[middle, start, end]
+    isBetween[middle, start, end]
 }
 
 
@@ -178,16 +191,16 @@ pred variableDeclThenInitThenUsed {
             // The initialization is in the scope of this variable.
             // NOTE: This is necessary in addition to the above constraint, 
             // because initializations are not considered uses.
-            statementReachableNoExit[init, decl]
+            statementReachable[init, decl]
 
             all use: Statement | variableUse[v, use] implies {
                 // Use is preceded by initialization
-                statementReachable[use, init]
+                isBetween[init, decl, use]
 
                 // All uses of the variable are within the scope of that variable
                 // NOTE: We use NoExit here, because we do not want to exit scopes 
                 // when finding a path from declaration to use.
-                statementReachableNoExit[use, decl]
+                statementReachable[use, decl]
             }
         }
     }
@@ -218,10 +231,13 @@ pred allObjectsParticipating {
     // All values are used in some statement. This eliminates values that 
     // aren't actually part of the program.
     all value: Value | {
-        some s: Statement | {
-            (s.initial_value = value) or (s.new_value = value) or (s.moved_value = value)
-        }
+        // There is exactly one place where this value is introduced to the program.
+        (one s: Statement | {
+            (s.initial_value = value) or (s.new_value = value)
+        })
     }
+
+    //Optional TODO: constrain curly braces to be useful-> having at least one statement in it 
 }
 
 // For every variable, there should be at most one InitializeVariable statement 
@@ -233,96 +249,69 @@ pred uniqueInitialization {
     }
 }
 
-//There is only one statement that has no next and no exit scope, which means that it is the end of the program
-pred onlyOneEndOfProgram {
-    one s: Statement | {
-        no s.next
-        no s.exit_scope
-    }
-}
-
-// FIXME: Our rules around scoping are still not correct. enter_scope / exit_scope / next
-
-// Constrains the enter_scope field to only be valid for declarations and curly brace statements.
+// Constrains the inner_scope field to only be valid for declarations and curly brace statements.
 pred enterScopeValid {
     // Variable declarations cannot have a "next" statement, as all statements that
-    // occur afterwards are subsumed in their scope (accessible via enter_scope).
+    // occur afterwards are subsumed in their scope (accessible via inner_scope).
     all d: DeclareVariable | no d.next
 
     // Only declarations and curly brace statements can create nested scopes
-    all i: InitializeVariable   | no i.enter_scope
-    all m: Move                 | no m.enter_scope
-    all u: UpdateVariable       | no u.enter_scope
+    all i: InitializeVariable   | no i.inner_scope
+    all m: Move                 | no m.inner_scope
+    all u: UpdateVariable       | no u.inner_scope
 
-    // No statement is both the `next` and `enter_scope` of some other statements.
+    // No statement is both the `next` and `inner_scope` of some other statements.
     // This is because:
-    //  - The only way to enter a new scope is via enter_scope, so a statement
+    //  - The only way to enter a new scope is via inner_scope, so a statement
     //    cannot be accessible via next if it is the first in a new scope
     //  - If a statement is accessible by next, then it is not the first in a 
-    //    new scope and thus shouldn't be accessible by enter_scope
+    //    new scope and thus shouldn't be accessible by inner_scope
     no s: Statement | {
         some prev, containing: Statement | {
             prev.next = s
-            containing.enter_scope = s
+            containing.inner_scope = s
         }
     }
 }
 
-// Constrains the exit_scope field to point to the next statement of the 
-// smallest containing scope.
-pred exitScopeValid {
-    all s: Statement | {
+// Constrains the move_value field of Move statements to refer to the value
+// of the source variable involved in the move, at the time of move.
+pred correctMoveValue {
+    all move: Move | {
+        some assignment: Statement | {
+            // Assigns to this variable
+            (assignment.initialized_variable = move.source or
+            assignment.updated_variable = move.source or 
+            assignment.destination = move.source)
 
-        // For all statements that create an inner scope AND are followed by some statement
-        (some s.enter_scope and some s.next) => {
-            some innerScopeEnd: Statement | {
-                // The end has a path out (via exit_scope) to the next statement 
-                // after the creator of this scope
-                innerScopeEnd.exit_scope = s.next
-                no innerScopeEnd.next 
+            // The assignment happens before the move
+            isBefore[assignment, move]
 
-                // The end is directly inside this scope
-                statementReachableNextOnly[innerScopeEnd, s.enter_scope] or innerScopeEnd = s.enter_scope
-            }
+            // No other assignment to this variable is more recent
+            no moreRecentAssignment: Statement | {
+                (moreRecentAssignment.initialized_variable = move.source or
+                moreRecentAssignment.updated_variable = move.source or 
+                moreRecentAssignment.destination = move.source)
+
+                isBetween[moreRecentAssignment, assignment, move]
+            }    
+
+            // The move gets the value from this most recent assignment
+            (move.moved_value = assignment.initial_value or 
+            move.moved_value = assignment.new_value or
+            move.moved_value = assignment.moved_value)
         }
-
-        // FIXME: This doesn't actually require any statement to have an exit_scope
-
-        // There is some statement that creates a scope that this statement is within,
-        // and we use that statement's next as the exit_scope for this statement.
-        some s.exit_scope => (some containingScope: Statement | { 
-            statementReachableNoExit[s, containingScope]
-            some containingScope.enter_scope
-            some containingScope.next
-
-            // There is no scope that is smaller that contains this statement
-            no smallerContainingScope: Statement | {
-                statementReachableNoExit[smallerContainingScope, containingScope]
-                statementReachableNoExit[s, smallerContainingScope]
-                some smallerContainingScope.enter_scope
-                some smallerContainingScope.next
-            }
-
-            // The exit scope of this statement will be the statement that comes
-            // after the containing scope
-            s.exit_scope = containingScope.next
-
-            // A statement can have a next, or an exit_scope, but not both
-            no s.next
-
-        })
     }
 }
 
 pred validProgramStructure {
     enterScopeValid
-    exitScopeValid
     sequentialStatements
     variableDeclThenInitThenUsed
     onlyMutateMutableVars
     allObjectsParticipating
-    onlyOneEndOfProgram
     uniqueInitialization
+    correctMoveValue
 }
 
 // ============================== Lifetimes ==============================
@@ -366,7 +355,8 @@ pred borrowMutLifetimes[bm: BorrowMut] {
 
 run {
     validProgramStructure
-
-    // Uncomment this to look for instances that utilize exit_scope
-    // some s: Statement | some s.exit_scope
-} for exactly 1 Program
+    all move: Move | {
+        move.source != move.destination
+        some move.destination
+    }
+} for exactly 6 Statement, exactly 1 Move
