@@ -12,6 +12,8 @@ const new_value_field = instance.field('new_value');
 const moved_value_field = instance.field("moved_value");
 const source_field = instance.field("source");
 const destination_field = instance.field("destination");
+const borrow_field = instance.field("borrow_referent");
+const borrow_mut_field = instance.field("borrow_mut_referent");
 
 // First statement of the entire program
 const first_statement = program.join(program_start_field);
@@ -43,6 +45,12 @@ function convertToProgramText(starting_statement) {
             const value = curr_statement.join(initial_value_field);
             text = ''+ variable + ' = ' 
             text += value + ';'
+            if (hasField(value, borrow_field)) {
+                text += ' (borrow)'
+            }
+            else if (hasField(value, borrow_mut_field)) {
+                text += ' (borrow mut)'
+            }
             stage.add(new TextBox(`${text}`, {x:x_offset, y:y_offset},'black',16));
         }
 
@@ -52,6 +60,12 @@ function convertToProgramText(starting_statement) {
             const value = curr_statement.join(new_value_field);
             text = variable + ' = '
             text += value + ';'
+            if (hasField(value, borrow_field)) {
+                text += ' (borrow)'
+            }
+            else if (hasField(value, borrow_mut_field)) {
+                text += ' (borrow mut)'
+            }
             stage.add(new TextBox(`${text}`, {x:x_offset, y:y_offset},'black',16));
         }
 
