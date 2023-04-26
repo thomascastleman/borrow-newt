@@ -314,25 +314,51 @@ pred validProgramStructure {
 // NOTE: This does NOT check that the program borrow checks, but only ensures
 // that the lifetimes are correct so that they may be used in analysis.
 pred lifetimesCorrect {
-    // TODO: 
-    // - Go through all values to check values lifetimes (Owned, Borrow, Borrow Mut)
-    // - Lifetimes should be unique (not shared between multiple values)
+    // Each kind of value has the corresponding kind of lifetime
+    all owned: Owned | ownedLifetime[owned]
+    all borrow: Borrow | borrowLifetime[borrow]
+    all borrowMut: BorrowMut | borrowMutLifetime[borrowMut]
+}
+
+// Determines if the given statement is the one that creates the given value.
+pred valueCreated[statement: Statement, value: Value] {
+    // Only initialize/update statements can create values
+    statement.initial_value = value or 
+    statement.new_value = value
+}
+
+// Determines if the given statement is the last use of the given value.
+pred lastUse[statement: Statement, value: Value] {
+    // TODO:
 }
 
 // For owned values, the lifetime extends from initialization until either:
 //   - The value is moved
 //   - The holding variable is assigned to again
 //   - The holding variable goes out of scope
-pred ownedLifetimes[o: Owned] {
+pred ownedLifetime[owned: Owned] {
+    // The start of lifetime is the point of creation
+    valueCreated[owned.value_lifetime.begin, owned]
+
     // TODO:
 }
 
-pred borrowLifetimes[b: Borrow] {
-    // TODO:
+// For borrows, the lifetime extends from the point of creation until last use.
+pred borrowLifetime[borrow: Borrow] {
+    // The start of lifetime is the point of creation
+    valueCreated[borrow.value_lifetime.begin, borrow]
+
+    // The end of lifetime is the last use
+    lastUse[borrow.value_lifetime.end, borrow]
 }
 
-pred borrowMutLifetimes[bm: BorrowMut] {
-    // TODO:
+// For mutable borrows, the lifetime extends from the point of creation until last use.
+pred borrowMutLifetime[borrowMut: BorrowMut] {
+    // The start of lifetime is the point of creation
+    valueCreated[borrowMut.value_lifetime.begin, borrowMut]
+
+    // The end of lifetime is the last use
+    lastUse[borrowMut.value_lifetime.end, borrowMut]
 }
 
 // ============================== Borrow Checking ==============================
@@ -349,8 +375,5 @@ pred borrowMutLifetimes[bm: BorrowMut] {
 
 run {
     validProgramStructure
-    all move: Move | {
-        move.source != move.destination
-        some move.destination
-    }
-} for exactly 6 Statement, exactly 1 Move
+    lifetimesCorrect
+}
