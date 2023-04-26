@@ -17,7 +17,7 @@ const borrow_mut_field = instance.field("borrow_mut_referent");
 
 // First statement of the entire program
 const first_statement = program.join(program_start_field);
-let x_offset = 40;
+let x_offset = 300; // 40;
 let y_offset = 20;
 
 // Check if a sig has a given field defined.
@@ -59,26 +59,28 @@ function convertToProgramText(starting_statement) {
             const variable = curr_statement.join(updated_variable_field);
             const value = curr_statement.join(new_value_field);
             text = variable + ' = '
-            text += value + ';'
             if (hasField(value, borrow_field)) {
-                text += ' (borrow)'
+                text += '&' + value.join(borrow_field) + ';';
             }
             else if (hasField(value, borrow_mut_field)) {
-                text += ' (borrow mut)'
+                text += '&mut ' + value.join(borrow_mut_field); + ';';
+            } else {
+                text += value + ';'
             }
+
             stage.add(new TextBox(`${text}`, {x:x_offset, y:y_offset},'black',16));
         }
 
         else if (hasField(curr_statement, moved_value_field)) {
             const src = curr_statement.join(source_field);
-            const dst = curr_statement.join(dst);
+            const dst = curr_statement.join(destination_field);
             text = src + ' = '
             text += dst + ';'
             stage.add(new TextBox(`${text}`, {x:x_offset, y:y_offset},'black',16));
         }
 
-        else {
-            stage.add(new TextBox(`curly`, {x:x_offset, y:y_offset},'black',16));
+        else if (!hasField(curr_statement, inner_scope_field)) {
+            stage.add(new TextBox(`{}`, {x:x_offset, y:y_offset},'black',16));
         }
         y_offset += 20;
 

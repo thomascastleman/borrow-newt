@@ -2,7 +2,19 @@
 
 - [ ] Constrain lifetimes
 - [ ] Borrow checking rules
-- [ ] Visualization script
+- [ ] predicate to prevent variable from borrowing itself
+- [ ] We don't model the "copy" behavior of shared references, which shouldn't be "movable"
+- [ ] Fix constraints on lifetimes to allow owned values to not have them now (Ria)
+
+- Visualization (Ria)
+  - [ ] Ability to copy the text that is generated (ideally from the visualization
+        window, or alternatively from the console)
+  - [ ] Alignment issues
+
+# Bugs
+
+- We allow a variable to borrow itself, which isn't legal in actual Rust because
+  the types &T (or &mut T) and T will never be equal, but we're not modeling types.
 
 # Questions
 

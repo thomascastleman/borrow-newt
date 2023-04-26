@@ -22,15 +22,7 @@ sig Variable {
 // ============================== Values ==============================
 
 abstract sig Value {
-    // For owned values, the lifetime extends from 
-    // initialization until either:
-    //   - The value is moved
-    //   - The holding variable is assigned to again
-    //   - The holding variable goes out of scope
-    // 
-    // For borrows, the lifetime extends from the point of 
-    // creation until the last use of the reference.
-    value_lifetime: one Lifetime
+    value_lifetime: lone Lifetime
 }
 
 sig Owned extends Value {}
@@ -310,16 +302,6 @@ pred validProgramStructure {
 
 // ============================== Lifetimes ==============================
 
-// Enforces that all lifetimes have been determined following the rules.
-// NOTE: This does NOT check that the program borrow checks, but only ensures
-// that the lifetimes are correct so that they may be used in analysis.
-pred lifetimesCorrect {
-    // Each kind of value has the corresponding kind of lifetime
-    all owned: Owned | ownedLifetime[owned]
-    all borrow: Borrow | borrowLifetime[borrow]
-    all borrowMut: BorrowMut | borrowMutLifetime[borrowMut]
-}
-
 // Determines if the given statement is the one that creates the given value.
 pred valueCreated[statement: Statement, value: Value] {
     // Only initialize/update statements can create values
@@ -329,18 +311,11 @@ pred valueCreated[statement: Statement, value: Value] {
 
 // Determines if the given statement is the last use of the given value.
 pred lastUse[statement: Statement, value: Value] {
-    // TODO:
+    // TODO: Thomas
 }
 
-// For owned values, the lifetime extends from initialization until either:
-//   - The value is moved
-//   - The holding variable is assigned to again
-//   - The holding variable goes out of scope
-pred ownedLifetime[owned: Owned] {
-    // The start of lifetime is the point of creation
-    valueCreated[owned.value_lifetime.begin, owned]
-
-    // TODO:
+pred reachableViaMove[target: Variable, start: Variable] {
+    // TODO: Ria
 }
 
 // For borrows, the lifetime extends from the point of creation until last use.
@@ -348,8 +323,7 @@ pred borrowLifetime[borrow: Borrow] {
     // The start of lifetime is the point of creation
     valueCreated[borrow.value_lifetime.begin, borrow]
 
-    // The end of lifetime is the last use
-    lastUse[borrow.value_lifetime.end, borrow]
+    // TODO:
 }
 
 // For mutable borrows, the lifetime extends from the point of creation until last use.
@@ -357,9 +331,24 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
     // The start of lifetime is the point of creation
     valueCreated[borrowMut.value_lifetime.begin, borrowMut]
 
-    // The end of lifetime is the last use
-    lastUse[borrowMut.value_lifetime.end, borrowMut]
+    // TODO: Idea for how we might implement this:
+    // some initVar: Variable, lastVar: Variable | {
+    //     initialVariable[initVar]
+    //     reachableViaMove[lastVar, initVar]
+    //     lastUse[borrowMut.value_lifetime.end, lastVar]
+    // }
+
 }
+
+// Enforces that all lifetimes have been determined following the rules.
+// NOTE: This does NOT check that the program borrow checks, but only ensures
+// that the lifetimes are correct so that they may be used in analysis.
+pred lifetimesCorrect {
+    // Each kind of value has the corresponding kind of lifetime
+    all borrow: Borrow | borrowLifetime[borrow]
+    all borrowMut: BorrowMut | borrowMutLifetime[borrowMut]
+}
+
 
 // ============================== Borrow Checking ==============================
 
@@ -376,4 +365,7 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
 run {
     validProgramStructure
     lifetimesCorrect
-}
+
+    some value: Value, variable: Variable | value.borrow_referent = variable
+    some value: Value, variable: Variable | value.borrow_mut_referent = variable
+} for 7 Statement, 5 Variable, 5 Value
