@@ -4,12 +4,15 @@
 - [ ] Borrow checking rules
 - [ ] predicate to prevent variable from borrowing itself
 - [ ] We don't model the "copy" behavior of shared references, which shouldn't be "movable"
+  - Should we just have an UpdateVariable statement instead of Move, which
+    behaves like a move if the thing is movable, and behaves like a copy otherwise
 - [ ] Fix constraints on lifetimes to allow owned values to not have them now (Ria)
 
 - Visualization (Ria)
   - [ ] Ability to copy the text that is generated (ideally from the visualization
         window, or alternatively from the console)
   - [ ] Alignment issues
+  - [ ] Visualize value function
 
 # Bugs
 

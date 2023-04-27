@@ -22,7 +22,7 @@ sig Variable {
 // ============================== Values ==============================
 
 abstract sig Value {
-    value_lifetime: lone Lifetime
+    value_lifetime: one Lifetime
 }
 
 sig Owned extends Value {}
@@ -64,7 +64,7 @@ sig UpdateVariable extends Statement {
     new_value: one Value
 }
 
-sig Move extends Statement {
+sig MoveOrCopy extends Statement {
     // The value being moved
     moved_value: one Value,
     // The variable that is being moved out of.
@@ -245,7 +245,7 @@ pred innerScopeValid {
 
     // Only declarations and curly brace statements can create nested scopes
     all i: InitializeVariable   | no i.inner_scope
-    all m: Move                 | no m.inner_scope
+    all m: MoveOrCopy                 | no m.inner_scope
     all u: UpdateVariable       | no u.inner_scope
 
     // Every statement is the first statement of at most one scope
@@ -260,10 +260,10 @@ pred innerScopeValid {
     }
 }
 
-// Constrains the move_value field of Move statements to refer to the value
+// Constrains the move_value field of MoveOrCopy statements to refer to the value
 // of the source variable involved in the move, at the time of move.
 pred correctMoveValue {
-    all move: Move | {
+    all move: MoveOrCopy | {
         some assignment: Statement | {
             // Assigns to this variable
             (assignment.initialized_variable = move.source or
@@ -310,12 +310,86 @@ pred valueCreated[statement: Statement, value: Value] {
 }
 
 // Determines if the given statement is the last use of the given value.
+// for borrow and borrow mut values 
 pred lastUse[statement: Statement, value: Value] {
     // TODO: Thomas
 }
 
 pred reachableViaMove[target: Variable, start: Variable] {
     // TODO: Ria
+    //some statmeent1 where start is source 
+    //all in between ones dest1 = source2
+    //some statement2 where target is dest
+    
+}
+
+// Determines if the given variable is the *first* variable that holds the value.
+pred initialVariable[variable: Variable, value: Value] {
+    some s: Statement | {
+        valueCreated[s, value]
+        (s.initialized_variable = variable or s.updated_variable = variable)
+    }
+}
+
+// Determines if the given variable is the *last* variable that holds the value.
+pred lastVariable[variable: Variable, value: Value] {
+    some initialVar: Variable | {
+        initialVariable[initialVar, value]
+        reachableViaMove[variable, initialVar]
+
+        //no moves out of initialVar
+        no otherVar: Variable | {
+            some m: MoveOrCopy | {
+                m.source = variable
+                m.destination = otherVar
+                m.moved_value = value
+            }
+        }
+    }
+}
+
+pred ownedEndOfLifetime[owned: Owned, end: Statement] {
+    some lastHoldingVar: Variable | {
+        lastVariable[lastHoldingVar, owned]
+
+        //   - The value is moved in a function call (destinationless move)
+        (end.source = lastHoldingVar and no end.destination) or
+        //   - The holding variable is assigned to again (holding variable is overwritten)
+        (end.updated_variable = lastHoldingVar) or
+        //   - The holding variable goes out of scope
+        {
+            // The end is indeed a statement at the end of a scope
+            no end.next
+
+            some decl: DeclareVariable | {
+                // The end is within the scope of the last holding variable
+                decl.declared_variable = lastHoldingVar
+                statementReachable[end, decl.inner_scope]
+
+                // It is the *very last* statement of the inner scope of the last holding variable
+                no earlierEnd: Statement | {
+                    statementReachable[earlierEnd, decl.inner_scope]
+                    isBefore[earlierEnd, end]
+                }
+            }
+        }
+    }
+}
+
+// For owned values, the lifetime extends from the point of creation until either:
+//   - The value is moved in a function call (destinationless move)
+//   - The holding variable is assigned to again (holding variable is overwritten)
+//   - The holding variable goes out of scope
+pred ownedLifetime[owned: Owned] {
+    // The start of lifetime is the point of creation
+    valueCreated[owned.value_lifetime.begin, owned]
+
+    ownedEndOfLifetime[owned, owned.value_lifetime.end]
+
+    no earlierEnd: Statement | {
+        ownedEndOfLifetime[owned, earlierEnd]
+        isBefore[earlierEnd, owned.value_lifetime.end]
+    }
 }
 
 // For borrows, the lifetime extends from the point of creation until last use.
@@ -333,11 +407,11 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
 
     // TODO: Idea for how we might implement this:
     // some initVar: Variable, lastVar: Variable | {
-    //     initialVariable[initVar]
+    //     initialVariable[initVar, borrowMut]
+    //     lastVariable[lastVar, borrowMut]
     //     reachableViaMove[lastVar, initVar]
     //     lastUse[borrowMut.value_lifetime.end, lastVar]
     // }
-
 }
 
 // Enforces that all lifetimes have been determined following the rules.
@@ -347,6 +421,7 @@ pred lifetimesCorrect {
     // Each kind of value has the corresponding kind of lifetime
     all borrow: Borrow | borrowLifetime[borrow]
     all borrowMut: BorrowMut | borrowMutLifetime[borrowMut]
+    all owned: Owned | ownedLifetime[owned]
 }
 
 
@@ -361,6 +436,7 @@ pred lifetimesCorrect {
 // - You cannot mutate a variable that is borrowed (either & or &mut)
 // - Once you move out of a variable, you cannot use it (it becomes uninitialized)
 // - You can only construct an exclusive reference (&mut) to a variable that is declared mut
+// - The lifetime of a borrow of a value must be contained within the lifetime of the value
 
 run {
     validProgramStructure
