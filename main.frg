@@ -451,6 +451,4 @@ run {
 
     some value: Value, variable: Variable | value.borrow_referent = variable
     some value: Value, variable: Variable | value.borrow_mut_referent = variable
-    some move: MoveOrCopy | some move.destination
-    some v: Variable | no v.mutable
 } for 7 Statement, 5 Variable, 5 Value

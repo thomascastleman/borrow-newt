@@ -8,10 +8,6 @@
     behaves like a move if the thing is movable, and behaves like a copy otherwise
 - [ ] Fix constraints on lifetimes to allow owned values to not have them now (Ria)
 
-- Visualization (Ria)
-  - [ ] Ability to copy the text that is generated (ideally from the visualization
-        window, or alternatively from the console)
-
 # Bugs
 
 - We allow a variable to borrow itself, which isn't legal in actual Rust because

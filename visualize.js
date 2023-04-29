@@ -20,11 +20,6 @@ const mutable_field = instance.field("mutable");
 // First statement of the entire program
 const first_statement = program.join(program_start_field);
 
-const LINE_HEIGHT = 20;
-const INDENT_AMOUNT = 20;
-let x_offset = 20;
-let y_offset = 20;
-
 // Check if a sig has a given field defined.
 function hasField(sig, field) {
   return sig.join(field).tuples().length != 0;
@@ -41,25 +36,18 @@ function valueToString(value) {
   }
 }
 
-// Visualize a line of the program.
-function visualizeLine(line, x_offset, y_offset) {
-  d3.select(svg)
-    .append("text")
-    .style("fill", "black")
-    .style("font-family", "monospace")
-    .style("font-size", "16")
-    .attr("x", x_offset)
-    .attr("y", y_offset)
-    .text(line);
+class ProgramLine {
+  constructor(text, indent_level) {
+    this.text = text;
+    this.indent_level = indent_level;
+  }
 }
 
-// Convert a sequence of statements into Rust syntax
-function convertToProgramText(starting_statement) {
+// Convert a sequence of statements into ProgramLines, which represent syntax.
+function convertToLines(starting_statement, lines, indent_level) {
   curr_statement = starting_statement;
 
   while (true) {
-    // TODO: Convert this statement to string, add to text
-
     //statement is a declaration
     if (hasField(curr_statement, declared_variable_field)) {
       const variable = curr_statement.join(declared_variable_field);
@@ -70,7 +58,7 @@ function convertToProgramText(starting_statement) {
         text = "let " + variable + ";";
       }
 
-      visualizeLine(text, x_offset, y_offset);
+      lines.push(new ProgramLine(text, indent_level));
     }
 
     //statement is an initialization
@@ -79,7 +67,7 @@ function convertToProgramText(starting_statement) {
       const value = curr_statement.join(initial_value_field);
       text = "" + variable + " = ";
       text += valueToString(value) + ";";
-      visualizeLine(text, x_offset, y_offset);
+      lines.push(new ProgramLine(text, indent_level));
     }
 
     //statement is an update
@@ -87,7 +75,7 @@ function convertToProgramText(starting_statement) {
       const variable = curr_statement.join(updated_variable_field);
       const value = curr_statement.join(new_value_field);
       text = variable + " = " + valueToString(value) + ";";
-      visualizeLine(text, x_offset, y_offset);
+      lines.push(new ProgramLine(text, indent_level));
     } else if (hasField(curr_statement, moved_value_field)) {
       const src = curr_statement.join(source_field);
       const dst = curr_statement.join(destination_field);
@@ -98,21 +86,20 @@ function convertToProgramText(starting_statement) {
         text = "move_to_func(" + src + ");";
       }
 
-      visualizeLine(text, x_offset, y_offset);
+      lines.push(new ProgramLine(text, indent_level));
     } else if (!hasField(curr_statement, inner_scope_field)) {
-      visualizeLine("{}", x_offset, y_offset);
+      lines.push(new ProgramLine("{}", indent_level));
     }
-    y_offset += LINE_HEIGHT;
 
     // If there is an inner scope, convert that whole thing to text, add to text
     if (hasField(curr_statement, inner_scope_field)) {
-      visualizeLine("{", x_offset, y_offset);
-      y_offset += LINE_HEIGHT;
-      x_offset += INDENT_AMOUNT;
-      convertToProgramText(curr_statement.join(inner_scope_field));
-      x_offset -= INDENT_AMOUNT;
-      visualizeLine("}", x_offset, y_offset);
-      y_offset += LINE_HEIGHT;
+      lines.push(new ProgramLine("{", indent_level));
+      convertToLines(
+        curr_statement.join(inner_scope_field),
+        lines,
+        indent_level + 1
+      );
+      lines.push(new ProgramLine("}", indent_level));
     }
 
     // Move to the next statement
@@ -124,4 +111,45 @@ function convertToProgramText(starting_statement) {
   }
 }
 
-convertToProgramText(first_statement);
+function convertLinesToString(lines) {
+  let programAsString = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    programAsString +=
+      "  ".repeat(lines[i].indent_level) + lines[i].text + "\n";
+  }
+
+  return programAsString;
+}
+
+const BASE_OFFSET = 20; // How much to offset in the X/Y by default so that the program isn't partially cut off.
+const LINE_HEIGHT = 20; // The height of each line of text
+const INDENT_AMOUNT = 20; // Size of indentation
+
+function visualizeLines(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const x_offset = BASE_OFFSET + lines[i].indent_level * INDENT_AMOUNT;
+    const y_offset = BASE_OFFSET + i * LINE_HEIGHT;
+
+    d3.select(svg)
+      .append("text")
+      .style("fill", "black")
+      .style("font-family", "monospace")
+      .style("font-size", "16")
+      .attr("x", x_offset)
+      .attr("y", y_offset)
+      .text(lines[i].text);
+  }
+}
+
+let lines = [];
+convertToLines(first_statement, lines, 0);
+visualizeLines(lines);
+const programAsString = convertLinesToString(lines);
+
+// Copy the program text to the clipboard, so it can be pasted and run if necessary
+navigator.clipboard.writeText(programAsString);
+
+// Log the program text to the console, in case automatic copying
+// doesn't work, it can be copied from here.
+console.log(programAsString);
