@@ -17,12 +17,35 @@ const borrow_mut_field = instance.field("borrow_mut_referent");
 
 // First statement of the entire program
 const first_statement = program.join(program_start_field);
-let x_offset = 300; // 40;
+let x_offset = 300;
 let y_offset = 20;
 
 // Check if a sig has a given field defined.
 function hasField(sig, field) {
   return sig.join(field).tuples().length != 0;
+}
+
+// Convert a value (owned, borrow, or borrow mut) to its visualization.
+function valueToString(value) {
+  if (hasField(value, borrow_field)) {
+    return "&" + value.join(borrow_field);
+  } else if (hasField(value, borrow_mut_field)) {
+    return "&mut " + value.join(borrow_mut_field);
+  } else {
+    return value;
+  }
+}
+
+// Visualize a line of the program.
+function visualizeLine(line, x_offset, y_offset) {
+  stage.add(
+    new TextBox({
+      text: `${line}`,
+      coords: { x: x_offset, y: y_offset },
+      color: "black",
+      fontSize: 16,
+    })
+  );
 }
 
 // Convert a sequence of statements into Rust syntax
@@ -36,7 +59,7 @@ function convertToProgramText(starting_statement) {
     if (hasField(curr_statement, declared_variable_field)) {
       const variable = curr_statement.join(declared_variable_field);
       text = "let " + variable + ";";
-      stage.add(new TextBox(`${text}`, { x: x_offset, y: y_offset }, "black"));
+      visualizeLine(text, x_offset, y_offset);
     }
 
     //statement is an initialization
@@ -44,55 +67,40 @@ function convertToProgramText(starting_statement) {
       const variable = curr_statement.join(initialized_variable_field);
       const value = curr_statement.join(initial_value_field);
       text = "" + variable + " = ";
-      text += value + ";";
-      if (hasField(value, borrow_field)) {
-        text += " (borrow)";
-      } else if (hasField(value, borrow_mut_field)) {
-        text += " (borrow mut)";
-      }
-      stage.add(
-        new TextBox(`${text}`, { x: x_offset, y: y_offset }, "black", 16)
-      );
+      text += valueToString(value) + ";";
+      visualizeLine(text, x_offset, y_offset);
     }
 
     //statement is an update
     else if (hasField(curr_statement, updated_variable_field)) {
       const variable = curr_statement.join(updated_variable_field);
       const value = curr_statement.join(new_value_field);
-      text = variable + " = ";
-      if (hasField(value, borrow_field)) {
-        text += "&" + value.join(borrow_field) + ";";
-      } else if (hasField(value, borrow_mut_field)) {
-        text += "&mut " + value.join(borrow_mut_field);
-        +";";
-      } else {
-        text += value + ";";
-      }
-
-      stage.add(
-        new TextBox(`${text}`, { x: x_offset, y: y_offset }, "black", 16)
-      );
+      text = variable + " = " + valueToString(value) + ";";
+      visualizeLine(text, x_offset, y_offset);
     } else if (hasField(curr_statement, moved_value_field)) {
       const src = curr_statement.join(source_field);
       const dst = curr_statement.join(destination_field);
-      text = src + " = ";
-      text += dst + ";";
-      stage.add(
-        new TextBox(`${text}`, { x: x_offset, y: y_offset }, "black", 16)
-      );
+
+      if (hasField(curr_statement, destination_field)) {
+        text = src + " = " + dst + ";";
+      } else {
+        text = "move_to_func(" + src + ");";
+      }
+
+      visualizeLine(text, x_offset, y_offset);
     } else if (!hasField(curr_statement, inner_scope_field)) {
-      stage.add(new TextBox(`{}`, { x: x_offset, y: y_offset }, "black", 16));
+      visualizeLine("{}", x_offset, y_offset);
     }
     y_offset += 20;
 
     // If there is an inner scope, convert that whole thing to text, add to text
     if (hasField(curr_statement, inner_scope_field)) {
-      stage.add(new TextBox(`{`, { x: x_offset, y: y_offset }, "black", 16));
+      visualizeLine("{", x_offset, y_offset);
       y_offset += 20;
       x_offset += 20;
       convertToProgramText(curr_statement.join(inner_scope_field));
       x_offset -= 20;
-      stage.add(new TextBox(`}`, { x: x_offset, y: y_offset }, "black", 16));
+      visualizeLine("}", x_offset, y_offset);
       y_offset += 20;
     }
 
@@ -105,11 +113,5 @@ function convertToProgramText(starting_statement) {
   }
 }
 
-// FIXME: For now, just log to console. We need to find out
-// how to display unformatted text (that includes our newlines)
-// in the visualizer.
-console.log(convertToProgramText(first_statement));
-
-// stage.add(new TextBox(`${convertToProgramText(first_statement)}`, {x:300, y:100},'black',16));
-// stage.add(new TextBox(`Hello`, {x:300, y:100},'black',16));
+convertToProgramText(first_statement);
 stage.render(svg, document);
