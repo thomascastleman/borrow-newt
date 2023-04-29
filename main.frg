@@ -309,10 +309,16 @@ pred valueCreated[statement: Statement, value: Value] {
     statement.new_value = value
 }
 
-// Determines if the given statement is the last use of the given value.
-// for borrow and borrow mut values 
-pred lastUse[statement: Statement, value: Value] {
-    // TODO: Thomas
+// Determines if the given statement is the last use of the given variable.
+pred lastUse[statement: Statement, variable: Variable] {
+    // The statement is a use of the variable
+    variableUse[variable, statement]
+
+    // There is no later use
+    no laterUse: Statement | {
+        isBefore[statement, laterUse]
+        variableUse[variable, laterUse]
+    }
 }
 
 pred reachableViaMove[target: Variable, start: Variable] {
@@ -384,8 +390,10 @@ pred ownedLifetime[owned: Owned] {
     // The start of lifetime is the point of creation
     valueCreated[owned.value_lifetime.begin, owned]
 
+    // The end of the lifetime is a valid end for owned values
     ownedEndOfLifetime[owned, owned.value_lifetime.end]
 
+    // The end is the earliest statement that meets such ending conditions
     no earlierEnd: Statement | {
         ownedEndOfLifetime[owned, earlierEnd]
         isBefore[earlierEnd, owned.value_lifetime.end]
@@ -406,12 +414,10 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
     valueCreated[borrowMut.value_lifetime.begin, borrowMut]
 
     // TODO: Idea for how we might implement this:
-    // some initVar: Variable, lastVar: Variable | {
-    //     initialVariable[initVar, borrowMut]
-    //     lastVariable[lastVar, borrowMut]
-    //     reachableViaMove[lastVar, initVar]
-    //     lastUse[borrowMut.value_lifetime.end, lastVar]
-    // }
+    some initVar: Variable, lastVar: Variable | {
+        lastVariable[lastVar, borrowMut]
+        lastUse[borrowMut.value_lifetime.end, lastVar]
+    }
 }
 
 // Enforces that all lifetimes have been determined following the rules.
