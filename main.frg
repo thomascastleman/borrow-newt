@@ -199,6 +199,7 @@ pred onlyMutateMutableVars {
     //for all variables such that there is some update of it implies it was mutable 
     all v: Variable | {
         (some update: UpdateVariable | update.updated_variable = v) => some v.mutable
+        (some move: MoveOrCopy | move.destination = v) => some v.mutable
     }
 }
 
@@ -451,4 +452,5 @@ run {
     some value: Value, variable: Variable | value.borrow_referent = variable
     some value: Value, variable: Variable | value.borrow_mut_referent = variable
     some move: MoveOrCopy | some move.destination
+    some v: Variable | no v.mutable
 } for 7 Statement, 5 Variable, 5 Value

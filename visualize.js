@@ -1,4 +1,5 @@
-const stage = new Stage();
+const d3 = require("d3");
+d3.selectAll("svg > *").remove();
 
 const program = instance.signature("Program").atoms()[0];
 const program_start_field = instance.field("program_start");
@@ -14,10 +15,14 @@ const source_field = instance.field("source");
 const destination_field = instance.field("destination");
 const borrow_field = instance.field("borrow_referent");
 const borrow_mut_field = instance.field("borrow_mut_referent");
+const mutable_field = instance.field("mutable");
 
 // First statement of the entire program
 const first_statement = program.join(program_start_field);
-let x_offset = 300;
+
+const LINE_HEIGHT = 20;
+const INDENT_AMOUNT = 20;
+let x_offset = 20;
 let y_offset = 20;
 
 // Check if a sig has a given field defined.
@@ -38,14 +43,14 @@ function valueToString(value) {
 
 // Visualize a line of the program.
 function visualizeLine(line, x_offset, y_offset) {
-  stage.add(
-    new TextBox({
-      text: `${line}`,
-      coords: { x: x_offset, y: y_offset },
-      color: "black",
-      fontSize: 16,
-    })
-  );
+  d3.select(svg)
+    .append("text")
+    .style("fill", "black")
+    .style("font-family", "monospace")
+    .style("font-size", "16")
+    .attr("x", x_offset)
+    .attr("y", y_offset)
+    .text(line);
 }
 
 // Convert a sequence of statements into Rust syntax
@@ -58,7 +63,13 @@ function convertToProgramText(starting_statement) {
     //statement is a declaration
     if (hasField(curr_statement, declared_variable_field)) {
       const variable = curr_statement.join(declared_variable_field);
-      text = "let " + variable + ";";
+
+      if (hasField(variable, mutable_field)) {
+        text = "let mut " + variable + ";";
+      } else {
+        text = "let " + variable + ";";
+      }
+
       visualizeLine(text, x_offset, y_offset);
     }
 
@@ -82,7 +93,7 @@ function convertToProgramText(starting_statement) {
       const dst = curr_statement.join(destination_field);
 
       if (hasField(curr_statement, destination_field)) {
-        text = src + " = " + dst + ";";
+        text = dst + " = " + src + ";";
       } else {
         text = "move_to_func(" + src + ");";
       }
@@ -91,17 +102,17 @@ function convertToProgramText(starting_statement) {
     } else if (!hasField(curr_statement, inner_scope_field)) {
       visualizeLine("{}", x_offset, y_offset);
     }
-    y_offset += 20;
+    y_offset += LINE_HEIGHT;
 
     // If there is an inner scope, convert that whole thing to text, add to text
     if (hasField(curr_statement, inner_scope_field)) {
       visualizeLine("{", x_offset, y_offset);
-      y_offset += 20;
-      x_offset += 20;
+      y_offset += LINE_HEIGHT;
+      x_offset += INDENT_AMOUNT;
       convertToProgramText(curr_statement.join(inner_scope_field));
-      x_offset -= 20;
+      x_offset -= INDENT_AMOUNT;
       visualizeLine("}", x_offset, y_offset);
-      y_offset += 20;
+      y_offset += LINE_HEIGHT;
     }
 
     // Move to the next statement
@@ -114,4 +125,3 @@ function convertToProgramText(starting_statement) {
 }
 
 convertToProgramText(first_statement);
-stage.render(svg, document);

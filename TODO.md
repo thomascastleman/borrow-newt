@@ -11,8 +11,6 @@
 - Visualization (Ria)
   - [ ] Ability to copy the text that is generated (ideally from the visualization
         window, or alternatively from the console)
-  - [ ] Alignment issues
-  - [ ] Visualize value function
 
 # Bugs
 
