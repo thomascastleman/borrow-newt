@@ -332,12 +332,7 @@ pred reachableViaMove[target: Variable, start: Variable] {
     some startStatement, endStatement: MoveOrCopy | {
         startStatement.source = start
         endStatement.destination = target
-        all middleStatement: MoveOrCopy | isBetween[middleStatement, startStatement, endStatement] => {
-            (middleStatement = startStatement or 
-            middleStatement = endStatement or 
-            (reachableViaMove[target, middleStatement.source] and 
-            reachableViaMove[middleStatement.source, start]))
-        }
+        endStatement.moved_value = startStatement.moved_value
     }
     
 }
