@@ -327,6 +327,15 @@ pred reachableViaMove[target: Variable, start: Variable] {
     //some statmeent1 where start is source 
     //all in between ones dest1 = source2
     //some statement2 where target is dest
+    //FIXME: this shouldn't be an implies it would need to be an and but then im not sure how to keep the startStatement and endStatement variables 
+    some startStatement, endStatement: MoveOrCopy | (startStatement.source = start and endStatement.destination = target) => {
+        all middleStatement: MoveOrCopy | isBetween[middleStatement, startStatement, endStatement] => {
+            (middleStatement = startStatement or 
+            middleStatement = endStatement or 
+            (reachableViaMove[target, middleStatement.source] and 
+            reachableViaMove[middleStatement.source, start]))
+        }
+    }
     
 }
 

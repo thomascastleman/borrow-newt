@@ -6,7 +6,6 @@
 - [ ] We don't model the "copy" behavior of shared references, which shouldn't be "movable"
   - Should we just have an UpdateVariable statement instead of Move, which
     behaves like a move if the thing is movable, and behaves like a copy otherwise
-- [ ] Fix constraints on lifetimes to allow owned values to not have them now (Ria)
 
 # Bugs
 
