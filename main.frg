@@ -226,6 +226,8 @@ pred allObjectsParticipating {
     }
 
     //Optional TODO: constrain curly braces to be useful-> having at least one statement in it 
+    // Could constrain: All curly brace statements must have some declaration *in the inner scope* - 
+    // otherwise, they are just superfluous
 }
 
 // For every variable, there should be at most one InitializeVariable statement 
@@ -309,15 +311,35 @@ pred valueCreated[statement: Statement, value: Value] {
     statement.new_value = value
 }
 
+// FIXME: Remove if unused, this is obsoleted by lastUseOfVarWithValue
 // Determines if the given statement is the last use of the given variable.
-pred lastUse[statement: Statement, variable: Variable] {
-    // The statement is a use of the variable
-    variableUse[variable, statement]
+// pred lastUse[statement: Statement, variable: Variable] {
+//     // The statement is a use of the variable
+//     variableUse[variable, statement]
 
-    // There is no later use
+//     // There is no later use
+//     no laterUse: Statement | {
+//         isBefore[statement, laterUse]
+//         variableUse[variable, laterUse]
+//     }
+// }
+
+// Determines if the given variable holds the given value at the point in the program when this statement occurs
+pred variableHasValueAtStmt[statement: Statement, variable: Variable, value: Value] {
+    // TODO:
+}
+
+// Determines if this statement is the last usage of the given variable, while 
+// it is holding the given value. I.e., if there are later uses of the variable,
+// they occur while it is holding different values.
+pred lastUseOfVarWithValue[statement: Statement, variable: Variable, value: Value] {
+    variableUse[variable, statement]
+    variableHasValueAtStmt[statement, variable, value]
+
     no laterUse: Statement | {
-        isBefore[statement, laterUse]
         variableUse[variable, laterUse]
+        variableHasValueAtStmt[laterUse, variable, value]
+        isBefore[statement, laterUse]
     }
 }
 
@@ -325,7 +347,10 @@ pred lastUse[statement: Statement, variable: Variable] {
 // into the target variable (potentially by a long chain of other moves).
 pred reachableViaMove[target: Variable, start: Variable] {
     some startStatement, endStatement: MoveOrCopy | {
+        // The start moves OUT OF the starting variable
         startStatement.source = start
+
+        // The end moves INTO the target variable
         endStatement.destination = target
 
         // If the moved value is the same between these two statements, 
@@ -366,34 +391,35 @@ pred lastVariable[variable: Variable, value: Value] {
     }
 }
 
+// Determines if the given `end` statement is a valid end of lifetime for the given owned value.
 pred ownedEndOfLifetime[owned: Owned, end: Statement] {
     some lastHoldingVar: Variable | {
         lastVariable[lastHoldingVar, owned]
 
-        //   - The value is moved in a function call (destinationless move)
-        (end.source = lastHoldingVar and no end.destination) or
+        let stmtAfterEnd = (some end.next => end.next else end.inner_scope) | {
+            // Case 1) The end statement is a destinationless move of the last holding variable of the value
+            (end.source = lastHoldingVar and no end.destination) or
 
-        // FIXME: Off-by-one: The value should not be considered alive during the 
-        // statement doing the update. End of lifetime should be the statement *before*.
-        //   - The holding variable is assigned to again (holding variable is overwritten)
-        (end.updated_variable = lastHoldingVar) or
+            // Case 2) The end statement is the last statement before the last holding variable is overwritten to a different value
+            (some stmtAfterEnd and stmtAfterEnd.updated_variable = lastHoldingVar) or
 
-        //   - The holding variable goes out of scope
-        {
-            // The end is indeed a statement at the end of a scope
-            no end.next
+            // Case 3) The end statement is the last statement before the last holding variable goes out of scope
+            {
+                // The end is indeed a statement at the end of a scope
+                no stmtAfterEnd
 
-            some decl: DeclareVariable | {
-                // The end is within the scope of the last holding variable
-                decl.declared_variable = lastHoldingVar
-                statementReachable[end, decl.inner_scope]
+                some decl: DeclareVariable | {
+                    // The end is within the scope of the last holding variable
+                    decl.declared_variable = lastHoldingVar
+                    statementReachable[end, decl.inner_scope]
 
-                // It is the last statement in that scope.
-                // (All other statements in that scope are *before* the end)
-                all stmtInSameScope: Statement | {
-                    ((statementReachable[stmtInSameScope, decl.inner_scope] or stmtInSameScope = decl.inner_scope)
-                    and stmtInSameScope != end) => {
-                        isBefore[stmtInSameScope, end]
+                    // It is the last statement in that scope.
+                    // (All other statements in that scope are *before* the end)
+                    all stmtInSameScope: Statement | {
+                        ((statementReachable[stmtInSameScope, decl.inner_scope] or stmtInSameScope = decl.inner_scope)
+                        and stmtInSameScope != end) => {
+                            isBefore[stmtInSameScope, end]
+                        }
                     }
                 }
             }
@@ -424,30 +450,23 @@ pred borrowLifetime[borrow: Borrow] {
     // The start of lifetime is the point of creation
     valueCreated[borrow.value_lifetime.begin, borrow]
 
-    // TODO:
     // Look for statement that is the _latest_ (as in, most late) use of _any_ 
     // variable that is reachable via move from the initial variable for the borrow
-
-    // FIXME: This has the same problem as borrowMut regarding mutability of holding vars
-    // More concretely:
-    some holdingVar: Variable, useOfBorrow: Statement | {
+    some holdingVar: Variable | {
         // This use is the last use of some holding variable for the borrow
         holdingVariable[holdingVar, borrow]
-        lastUse[useOfBorrow, holdingVar]
+        lastUseOfVarWithValue[borrow.value_lifetime.end, holdingVar, borrow]
 
         // All other last uses of holding variables happen before this one
         all otherHoldingVar: Variable, otherUse: Statement | {
             {
                 holdingVariable[otherHoldingVar, borrow] 
-                lastUse[otherUse, otherHoldingVar]
+                lastUseOfVarWithValue[otherUse, otherHoldingVar, borrow]
                 otherHoldingVar != holdingVar
             } => {
-                isBefore[otherUse, useOfBorrow]
+                isBefore[otherUse, borrow.value_lifetime.end]
             }
         }
-
-        // The end of the lifetime is this absolute last use
-        borrow.value_lifetime.end = useOfBorrow 
     }
 }
 
@@ -455,21 +474,11 @@ pred borrowLifetime[borrow: Borrow] {
 pred borrowMutLifetime[borrowMut: BorrowMut] {
     // The start of lifetime is the point of creation
     valueCreated[borrowMut.value_lifetime.begin, borrowMut]
-
-    // FIXME: This doesn't handle mutability well - need something like what ownedLifetime
-    // does for when a holding variable is reassigned to.
-    // Example program:
-    // let mut a = 0;
-    // let mut c = 1;
-    // let mut b = &mut a;
-    // b = &mut c;             // &mut a ends here
-    // a = 1;                  // This is valid
-    // println!("{}", b);      // Last use of variable b
     
     // The end is the last use of the last variable this value is moved to
     some lastVar: Variable | {
         lastVariable[lastVar, borrowMut]
-        lastUse[borrowMut.value_lifetime.end, lastVar]
+        lastUseOfVarWithValue[borrowMut.value_lifetime.end, lastVar, borrowMut]
     }
 }
 
