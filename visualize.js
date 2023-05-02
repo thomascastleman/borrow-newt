@@ -49,7 +49,7 @@ class ProgramLine {
 
 // Convert a sequence of statements into ProgramLines, which represent syntax.
 function convertToLines(starting_statement, lines, indent_level) {
-  curr_statement = starting_statement;
+  let curr_statement = starting_statement;
 
   while (true) {
     //statement is a declaration
@@ -97,13 +97,13 @@ function convertToLines(starting_statement, lines, indent_level) {
 
     // If there is an inner scope, convert that whole thing to text, add to text
     if (hasField(curr_statement, inner_scope_field)) {
-      lines.push(new ProgramLine("{", indent_level, null));
+      lines.push(new ProgramLine("{", indent_level, curr_statement));
       convertToLines(
         curr_statement.join(inner_scope_field),
         lines,
         indent_level + 1
       );
-      lines.push(new ProgramLine("}", indent_level, null));
+      lines.push(new ProgramLine("}", indent_level, curr_statement));
     }
 
     // Move to the next statement

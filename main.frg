@@ -168,6 +168,11 @@ pred variableUse[variable: Variable, statement: Statement] {
     })
 }
 
+// Version of variableUse that includes initialization statements as uses.
+pred variableUseOrInit[variable: Variable, statement: Statement] {
+    variableUse[variable, statement] or statement.initialized_variable = variable
+}
+
 // Checks that variable use is preceded by initialization and declaration.
 pred variableDeclThenInitThenUsed {
     all v: Variable | {
@@ -262,33 +267,39 @@ pred innerScopeValid {
     }
 }
 
+// Determines if the given variable holds the given value at the point in the program when this statement occurs
+pred variableHasValueAtStmt[statement: Statement, variable: Variable, value: Value] {
+    some assignment: Statement | {
+        // Assigns to this variable
+        (assignment.initialized_variable = variable or
+        assignment.updated_variable = variable or 
+        assignment.destination = variable)
+
+        // The assignment happens before the statement (or IS the statement)
+        (isBefore[assignment, statement] or (statement = assignment))
+
+        // No other assignment to this variable is more recent
+        no moreRecentAssignment: Statement | {
+            (moreRecentAssignment.initialized_variable = variable or
+            moreRecentAssignment.updated_variable = variable or 
+            moreRecentAssignment.destination = variable)
+
+            moreRecentAssignment != assignment
+            isBetween[moreRecentAssignment, assignment, statement] or (moreRecentAssignment = statement)
+        }
+
+        // The value comes from this most recent assignment
+        (value = assignment.initial_value or 
+        value = assignment.new_value or
+        value = assignment.moved_value)
+    }
+}
+
 // Constrains the move_value field of MoveOrCopy statements to refer to the value
 // of the source variable involved in the move, at the time of move.
 pred correctMoveValue {
     all move: MoveOrCopy | {
-        some assignment: Statement | {
-            // Assigns to this variable
-            (assignment.initialized_variable = move.source or
-            assignment.updated_variable = move.source or 
-            assignment.destination = move.source)
-
-            // The assignment happens before the move
-            isBefore[assignment, move]
-
-            // No other assignment to this variable is more recent
-            no moreRecentAssignment: Statement | {
-                (moreRecentAssignment.initialized_variable = move.source or
-                moreRecentAssignment.updated_variable = move.source or 
-                moreRecentAssignment.destination = move.source)
-
-                isBetween[moreRecentAssignment, assignment, move]
-            }    
-
-            // The move gets the value from this most recent assignment
-            (move.moved_value = assignment.initial_value or 
-            move.moved_value = assignment.new_value or
-            move.moved_value = assignment.moved_value)
-        }
+       variableHasValueAtStmt[move, move.source, move.moved_value] 
     }
 }
 
@@ -311,33 +322,15 @@ pred valueCreated[statement: Statement, value: Value] {
     statement.new_value = value
 }
 
-// FIXME: Remove if unused, this is obsoleted by lastUseOfVarWithValue
-// Determines if the given statement is the last use of the given variable.
-// pred lastUse[statement: Statement, variable: Variable] {
-//     // The statement is a use of the variable
-//     variableUse[variable, statement]
-
-//     // There is no later use
-//     no laterUse: Statement | {
-//         isBefore[statement, laterUse]
-//         variableUse[variable, laterUse]
-//     }
-// }
-
-// Determines if the given variable holds the given value at the point in the program when this statement occurs
-pred variableHasValueAtStmt[statement: Statement, variable: Variable, value: Value] {
-    // TODO:
-}
-
 // Determines if this statement is the last usage of the given variable, while 
 // it is holding the given value. I.e., if there are later uses of the variable,
 // they occur while it is holding different values.
 pred lastUseOfVarWithValue[statement: Statement, variable: Variable, value: Value] {
-    variableUse[variable, statement]
+    variableUseOrInit[variable, statement]
     variableHasValueAtStmt[statement, variable, value]
 
     no laterUse: Statement | {
-        variableUse[variable, laterUse]
+        variableUseOrInit[variable, laterUse]
         variableHasValueAtStmt[laterUse, variable, value]
         isBefore[statement, laterUse]
     }
@@ -345,7 +338,7 @@ pred lastUseOfVarWithValue[statement: Statement, variable: Variable, value: Valu
 
 // Determines if the value from the start variable is eventually moved 
 // into the target variable (potentially by a long chain of other moves).
-pred reachableViaMove[target: Variable, start: Variable] {
+pred reachableViaMove[target: Variable, start: Variable, value: Value] {
     some startStatement, endStatement: MoveOrCopy | {
         // The start moves OUT OF the starting variable
         startStatement.source = start
@@ -353,9 +346,10 @@ pred reachableViaMove[target: Variable, start: Variable] {
         // The end moves INTO the target variable
         endStatement.destination = target
 
-        // If the moved value is the same between these two statements, 
+        // If the moved value is the same between these two statements, and equal to the current value 
         // there must be a chain of moves that gets the value from start to target.
-        endStatement.moved_value = startStatement.moved_value
+        endStatement.moved_value = value
+        startStatement.moved_value = value
     }
 }
 
@@ -371,7 +365,7 @@ pred initialVariable[variable: Variable, value: Value] {
 pred holdingVariable[variable: Variable, value: Value] {
     some initialVar: Variable | {
         initialVariable[initialVar, value]
-        reachableViaMove[variable, initialVar]
+        reachableViaMove[variable, initialVar, value]
     }
 }
 
@@ -383,6 +377,8 @@ pred lastVariable[variable: Variable, value: Value] {
     // This variable is never moved out of into some other variable
     // (It can be moved in a destination-less move though)
     no otherVar: Variable | {
+        otherVar != variable
+
         some m: MoveOrCopy | {
             m.source = variable
             m.destination = otherVar
@@ -447,9 +443,11 @@ pred ownedLifetime[owned: Owned] {
 
 // For borrows, the lifetime extends from the point of creation until last use.
 pred borrowLifetime[borrow: Borrow] {
+
     // The start of lifetime is the point of creation
     valueCreated[borrow.value_lifetime.begin, borrow]
 
+    // FIXME: Something is broken here
     // Look for statement that is the _latest_ (as in, most late) use of _any_ 
     // variable that is reachable via move from the initial variable for the borrow
     some holdingVar: Variable | {
@@ -475,6 +473,7 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
     // The start of lifetime is the point of creation
     valueCreated[borrowMut.value_lifetime.begin, borrowMut]
     
+    // FIXME: Something is broken here
     // The end is the last use of the last variable this value is moved to
     some lastVar: Variable | {
         lastVariable[lastVar, borrowMut]
