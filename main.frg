@@ -6,7 +6,6 @@ one sig Program {
 
 // A lifetime describes a region of the program for which a value is "live" (in use).
 sig Lifetime {
-    // TODO: Decide what these bounds mean (inclusive/exclusive)
     begin: one Statement,
     end: one Statement
 }
@@ -246,7 +245,7 @@ pred innerScopeValid {
 
     // Only declarations and curly brace statements can create nested scopes
     all i: InitializeVariable   | no i.inner_scope
-    all m: MoveOrCopy                 | no m.inner_scope
+    all m: MoveOrCopy           | no m.inner_scope
     all u: UpdateVariable       | no u.inner_scope
 
     // Every statement is the first statement of at most one scope
@@ -322,19 +321,17 @@ pred lastUse[statement: Statement, variable: Variable] {
     }
 }
 
+// Determines if the value from the start variable is eventually moved 
+// into the target variable (potentially by a long chain of other moves).
 pred reachableViaMove[target: Variable, start: Variable] {
-    // TODO: Ria
-    //some statmeent1 where start is source 
-    //all in between ones dest1 = source2
-    //some statement2 where target is dest
-    //FIXME: I don't think predicates can be recursive? 
-    
     some startStatement, endStatement: MoveOrCopy | {
         startStatement.source = start
         endStatement.destination = target
+
+        // If the moved value is the same between these two statements, 
+        // there must be a chain of moves that gets the value from start to target.
         endStatement.moved_value = startStatement.moved_value
     }
-    
 }
 
 // Determines if the given variable is the *first* variable that holds the value.
@@ -375,8 +372,12 @@ pred ownedEndOfLifetime[owned: Owned, end: Statement] {
 
         //   - The value is moved in a function call (destinationless move)
         (end.source = lastHoldingVar and no end.destination) or
+
+        // FIXME: Off-by-one: The value should not be considered alive during the 
+        // statement doing the update. End of lifetime should be the statement *before*.
         //   - The holding variable is assigned to again (holding variable is overwritten)
         (end.updated_variable = lastHoldingVar) or
+
         //   - The holding variable goes out of scope
         {
             // The end is indeed a statement at the end of a scope
