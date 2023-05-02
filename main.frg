@@ -345,19 +345,26 @@ pred initialVariable[variable: Variable, value: Value] {
     }
 }
 
-// Determines if the given variable is the *last* variable that holds the value.
-pred lastVariable[variable: Variable, value: Value] {
+// Determines if this variable eventually holds this value.
+pred holdingVariable[variable: Variable, value: Value] {
     some initialVar: Variable | {
         initialVariable[initialVar, value]
         reachableViaMove[variable, initialVar]
+    }
+}
 
-        //no moves out of initialVar
-        no otherVar: Variable | {
-            some m: MoveOrCopy | {
-                m.source = variable
-                m.destination = otherVar
-                m.moved_value = value
-            }
+// Determines if the given variable is the *last* variable that holds the value.
+pred lastVariable[variable: Variable, value: Value] {
+    // This variable holds the value
+    holdingVariable[variable, value]
+
+    // This variable is never moved out of into some other variable
+    // (It can be moved in a destination-less move though)
+    no otherVar: Variable | {
+        some m: MoveOrCopy | {
+            m.source = variable
+            m.destination = otherVar
+            m.moved_value = value
         }
     }
 }
@@ -380,10 +387,13 @@ pred ownedEndOfLifetime[owned: Owned, end: Statement] {
                 decl.declared_variable = lastHoldingVar
                 statementReachable[end, decl.inner_scope]
 
-                // It is the *very last* statement of the inner scope of the last holding variable
-                no earlierEnd: Statement | {
-                    statementReachable[earlierEnd, decl.inner_scope]
-                    isBefore[earlierEnd, end]
+                // It is the last statement in that scope.
+                // (All other statements in that scope are *before* the end)
+                all stmtInSameScope: Statement | {
+                    ((statementReachable[stmtInSameScope, decl.inner_scope] or stmtInSameScope = decl.inner_scope)
+                    and stmtInSameScope != end) => {
+                        isBefore[stmtInSameScope, end]
+                    }
                 }
             }
         }
@@ -414,6 +424,30 @@ pred borrowLifetime[borrow: Borrow] {
     valueCreated[borrow.value_lifetime.begin, borrow]
 
     // TODO:
+    // Look for statement that is the _latest_ (as in, most late) use of _any_ 
+    // variable that is reachable via move from the initial variable for the borrow
+
+    // FIXME: This has the same problem as borrowMut regarding mutability of holding vars
+    // More concretely:
+    some holdingVar: Variable, useOfBorrow: Statement | {
+        // This use is the last use of some holding variable for the borrow
+        holdingVariable[holdingVar, borrow]
+        lastUse[useOfBorrow, holdingVar]
+
+        // All other last uses of holding variables happen before this one
+        all otherHoldingVar: Variable, otherUse: Statement | {
+            {
+                holdingVariable[otherHoldingVar, borrow] 
+                lastUse[otherUse, otherHoldingVar]
+                otherHoldingVar != holdingVar
+            } => {
+                isBefore[otherUse, useOfBorrow]
+            }
+        }
+
+        // The end of the lifetime is this absolute last use
+        borrow.value_lifetime.end = useOfBorrow 
+    }
 }
 
 // For mutable borrows, the lifetime extends from the point of creation until last use.
@@ -421,8 +455,18 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
     // The start of lifetime is the point of creation
     valueCreated[borrowMut.value_lifetime.begin, borrowMut]
 
-    // TODO: Idea for how we might implement this:
-    some initVar: Variable, lastVar: Variable | {
+    // FIXME: This doesn't handle mutability well - need something like what ownedLifetime
+    // does for when a holding variable is reassigned to.
+    // Example program:
+    // let mut a = 0;
+    // let mut c = 1;
+    // let mut b = &mut a;
+    // b = &mut c;             // &mut a ends here
+    // a = 1;                  // This is valid
+    // println!("{}", b);      // Last use of variable b
+    
+    // The end is the last use of the last variable this value is moved to
+    some lastVar: Variable | {
         lastVariable[lastVar, borrowMut]
         lastUse[borrowMut.value_lifetime.end, lastVar]
     }
@@ -449,6 +493,8 @@ pred lifetimesCorrect {
 // - You cannot move out of a variable that is borrowed (either & or &mut)
 // - You cannot mutate a variable that is borrowed (either & or &mut)
 // - Once you move out of a variable, you cannot use it (it becomes uninitialized)
+//      - Note that with borrows (shared references), a copy is performed and 
+//        the variable can still be used afterwards
 // - You can only construct an exclusive reference (&mut) to a variable that is declared mut
 // - The lifetime of a borrow of a value must be contained within the lifetime of the value
 
