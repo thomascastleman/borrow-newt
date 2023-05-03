@@ -20,7 +20,6 @@ test suite for lifetimesCorrect {
             }
         } is theorem
 
-        // FIXME: This has a counterexample
         // Every variable has at most one value at a given statement
         variablesHaveOneValueAtATime: {
             (validProgramStructure and lifetimesCorrect) => {
