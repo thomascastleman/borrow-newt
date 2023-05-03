@@ -88,8 +88,15 @@ pred statementReachable[target: Statement, start: Statement] {
     reachable[target, start, next, inner_scope]
 }
 
+// Variant of statementReachable that only allows reachability via the `next` field.
+// This outrules any entering of inner scopes in order to reach the target.
 pred statementReachableOnlyNext[target: Statement, start: Statement] {
     reachable[target, start, next]
+}
+
+// Variant of statementReachable that allows for the target and start begin the same.
+pred statementReachableInclusive[target: Statement, start: Statement] {
+    statementReachable[target, start] or target = start
 }
 
 // Checks if the `before` statement occurs strictly earlier in the program than the `after` statement.
@@ -105,13 +112,18 @@ pred isBefore[earlier: Statement, later: Statement] {
     (some commonAncestor: Statement | {
         // The common ancestor is a containing scope for `earlier`
         some commonAncestor.inner_scope
-        (statementReachable[earlier, commonAncestor.inner_scope] or 
-        earlier = commonAncestor.inner_scope)
+        statementReachableInclusive[earlier, commonAncestor.inner_scope]
 
         // The common ancestor happens strictly before the `later`, and
         // `later` is not part of the common ancestor's inner scope.
-        some commonAncestor.next and statementReachable[later, commonAncestor.next]
+        some commonAncestor.next and statementReachableInclusive[later, commonAncestor.next]
     }))
+}
+
+// A variant of isBefore that allows for the statements to be the same.
+pred isBeforeOrEqual[earlier: Statement, later: Statement] {
+    isBefore[earlier, later] or 
+    earlier = later
 }
 
 // Determines if a given statement is between a start and end statement, exclusive.
@@ -146,7 +158,7 @@ pred sequentialStatements {
     }
 
     // All statements are part of the program (reachable from the program start)
-    all s: Statement | (s != Program.program_start => statementReachable[s, Program.program_start])
+    all s: Statement | statementReachableInclusive[s, Program.program_start]
 }
 
 // Determines if the given variable is being "used" in the given statement.
@@ -205,6 +217,11 @@ pred onlyMutateMutableVars {
         (some update: UpdateVariable | update.updated_variable = v) => some v.mutable
         (some move: MoveOrCopy | move.destination = v) => some v.mutable
     }
+}
+
+// You can only construct an exclusive reference (&mut) to a variable that is declared mut
+pred onlyBorrowMutMutableVars {
+    // TODO:
 }
 
 // Ensures that all objects in the instance are actually being used in the program.
@@ -433,8 +450,7 @@ pred ownedEndOfLifetime[owned: Owned, end: Statement] {
                     // It is the last statement in that scope.
                     // (All other statements in that scope are *before* the end)
                     all stmtInSameScope: Statement | {
-                        ((statementReachable[stmtInSameScope, decl.inner_scope] or stmtInSameScope = decl.inner_scope)
-                        and stmtInSameScope != end) => {
+                        (statementReachableInclusive[stmtInSameScope, decl.inner_scope] and stmtInSameScope != end) => {
                             isBefore[stmtInSameScope, end]
                         }
                     }
@@ -460,6 +476,9 @@ pred ownedLifetime[owned: Owned] {
         ownedEndOfLifetime[owned, earlierEnd]
         isBefore[earlierEnd, owned.value_lifetime.end]
     }
+    
+    // The beginning of the lifetime cannot be after the end 
+    isBeforeOrEqual[owned.value_lifetime.begin, owned.value_lifetime.end]
 }
 
 // For borrows, the lifetime extends from the point of creation until last use.
@@ -485,6 +504,9 @@ pred borrowLifetime[borrow: Borrow] {
             }
         }
     }
+
+    //The beginning of the lifetime cannot be after the end
+    isBeforeOrEqual[borrow.value_lifetime.begin, borrow.value_lifetime.end]
 }
 
 // For mutable borrows, the lifetime extends from the point of creation until last use.
@@ -497,6 +519,9 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
         lastVariable[lastVar, borrowMut]
         lastUseOfVarWithValue[borrowMut.value_lifetime.end, lastVar, borrowMut]
     }
+
+    //The beginning of the lifetime cannot be after the end
+    isBeforeOrEqual[borrowMut.value_lifetime.begin, borrowMut.value_lifetime.end]
 }
 
 // Enforces that all lifetimes have been determined following the rules.
@@ -512,22 +537,79 @@ pred lifetimesCorrect {
 
 // ============================== Borrow Checking ==============================
 
-// TODO: Add predicates for these rules
-// Borrow checking rules:
-// - When there is an exclusive reference (&mut) to a variable, there can be 
-//   no other references (& or &mut) alive at the same time.
-// - As many shared references (&) as you want can coexist at the same time.
+// Determines if the lifetimes of the given values have any overlap.
+pred lifetimesOverlap[v1: Value, v2: Value] {
+    isBetweenInclusive[v2.value_lifetime.begin, v1.value_lifetime.begin, v1.value_lifetime.end] or 
+    isBetweenInclusive[v2.value_lifetime.end, v1.value_lifetime.begin, v1.value_lifetime.end] or 
+    isBetweenInclusive[v1.value_lifetime.begin, v2.value_lifetime.begin, v2.value_lifetime.end] or 
+    isBetweenInclusive[v1.value_lifetime.end, v2.value_lifetime.begin, v2.value_lifetime.end]
+}
+
+// Determines if the given statement happens during the lifetime of the value.
+pred duringLifetime[statement: Statement, value: Value] {
+    isBetweenInclusive[statement, value.value_lifetime.begin, value.value_lifetime.end]
+}
+
+// When there is an exclusive reference (&mut) to a variable, there can be 
+// no other references (& or &mut) alive at the same time.
+pred borrowMutsAreUnique {
+    //if there is a borrow mut of a variable cannot have another borrow mut of that variable or a borrow of that variable
+    all borrowMut: BorrowMut | {
+        //this is during their lifetime 
+        no otherBorrowMut: BorrowMut | {
+            lifetimesOverlap[borrowMut, otherBorrowMut]
+            borrowMut != otherBorrowMut
+            borrowMut.borrow_mut_referent = otherBorrowMut.borrow_mut_referent
+        }
+        no borrow: Borrow |  {
+            lifetimesOverlap[borrowMut, borrow]
+            borrowMut.borrow_mut_referent = borrow.borrow_referent
+        }
+    }
+}
+
 // - You cannot move out of a variable that is borrowed (either & or &mut)
 // - You cannot mutate a variable that is borrowed (either & or &mut)
-// - Once you move out of a variable, you cannot use it (it becomes uninitialized)
-//      - Note that with borrows (shared references), a copy is performed and 
-//        the variable can still be used afterwards
-// - You can only construct an exclusive reference (&mut) to a variable that is declared mut
-// - The lifetime of a borrow of a value must be contained within the lifetime of the value
+// cannot do a move or update statement where the borrowed variable is the source within the lifetme of the borrow of that variable
+pred cannotChangeBorrowedVariable {
+    // TODO: Ria
+    //for every borrow, no move or update of the referent within the lifetime of that borrow 
+}
+
+// Once you move out of a variable, you cannot use it (it becomes uninitialized)
+// Note that with borrows (shared references), a copy is performed and 
+// the variable can still be used afterwards
+// E.g.
+// Variable2 = Box::new(());
+// Variable3 = Variable2;
+// // Now, Variable2 cannot be used (was moved out of)
+// E.g.
+// Variable1 = Box::new(());
+// Variable2 = &mut Variable1;
+// Variable3 = Variable2;
+// // Now, Variable2 cannot be used (was moved out of)
+pred cannotUseAfterMove {
+    // TODO: Thomas
+}
+
+// The lifetime of a borrow of a value must be contained within the lifetime of the value
+pred borrowAliveDuringValueLifetime {
+    // TODO: Ria
+}
+
+// Does the program pass the borrow checker.
+pred satisfiesBorrowChecking {
+    borrowMutsAreUnique
+    cannotChangeBorrowedVariable
+    cannotUseAfterMove
+    borrowAliveDuringValueLifetime
+}
+
 
 run {
     validProgramStructure
     lifetimesCorrect
+    satisfiesBorrowChecking
 
     some value: Value, variable: Variable | value.borrow_referent = variable
     some value: Value, variable: Variable | value.borrow_mut_referent = variable

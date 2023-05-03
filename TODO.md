@@ -1,18 +1,25 @@
 # To do
 
-- [ ] Constrain lifetimes
 - [ ] Borrow checking rules
 - [ ] predicate to prevent variable from borrowing itself
   - [ ] Really some kind of basic type checking would be better than this,
-        even if type annotations are needed
+        even if type annotations are needed (Thomas)
 - [ ] We don't model the "copy" behavior of shared references, which shouldn't be "movable"
   - Should we just have an UpdateVariable statement instead of Move, which
     behaves like a move if the thing is movable, and behaves like a copy otherwise
 - [ ] Visualize lifetimes
   - Use some kind of bounding box around the relevant statements, color-coded by value?
 - [ ] Testing
-  - [ ] Convert tricky example programs into concrete tests for lifetimes
+
   - [ ] Property tests for lifetimes
+  - [ ] Property tests for borrow checking
+
+- [ ] Can't borrow variable as mutable if it is not marked `mut` - constrain this under
+      valid program structure somewhere (Ria)
+
+- [ ] Optimizations for efficiency
+
+- [ ] Splitting everything into multiple .frg files based on the comments dividing functionality
 
 # Bugs
 
