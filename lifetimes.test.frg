@@ -19,6 +19,20 @@ test suite for lifetimesCorrect {
                 }
             }
         } is theorem
+
+        // FIXME: This has a counterexample
+        // Every variable has at most one value at a given statement
+        variablesHaveOneValueAtATime: {
+            (validProgramStructure and lifetimesCorrect) => {
+                all statement: Statement, variable: Variable | {
+                    lone value: Value | {
+                        variableHasValueAtStmt[statement, variable, value]
+                    }
+                }
+            }
+        }
+        for 7 Statement
+        is theorem
     }
 
     // example trickyBorrowLifetime is {validProgramStructure lifetimesCorrect} for {

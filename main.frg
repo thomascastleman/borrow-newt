@@ -267,31 +267,52 @@ pred innerScopeValid {
     }
 }
 
-// Determines if the given variable holds the given value at the point in the program when this statement occurs
-pred variableHasValueAtStmt[statement: Statement, variable: Variable, value: Value] {
-    some assignment: Statement | {
-        // Assigns to this variable
-        (assignment.initialized_variable = variable or
-        assignment.updated_variable = variable or 
-        assignment.destination = variable)
+// Determines if the given statement assigns to the variable (either by initializing,
+// updating, or doing a move).
+pred assignsToVar[assignment: Statement, variable: Variable] {
+    assignment.initialized_variable = variable or
+    assignment.updated_variable = variable or 
+    assignment.destination = variable
+}
 
-        // The assignment happens before the statement (or IS the statement)
-        (isBefore[assignment, statement] or (statement = assignment))
+// Determines if the given value matches the one from the given assignment statement.
+pred valueFromAssignment[assignment: Statement, value: Value] {
+    value = assignment.initial_value or 
+    value = assignment.new_value or
+    value = assignment.moved_value
+}
+
+// Determines if the given variable holds the given value right before the 
+// execution of the given statement (not including effects of the statement itself).
+pred variableHasValueBeforeStmt[statement: Statement, variable: Variable, value: Value] {
+    some assignment: Statement | {
+        assignsToVar[assignment, variable]
+
+        // The assignment happens before the statement
+        isBefore[assignment, statement]
 
         // No other assignment to this variable is more recent
         no moreRecentAssignment: Statement | {
-            (moreRecentAssignment.initialized_variable = variable or
-            moreRecentAssignment.updated_variable = variable or 
-            moreRecentAssignment.destination = variable)
-
-            moreRecentAssignment != assignment
-            isBetween[moreRecentAssignment, assignment, statement] or (moreRecentAssignment = statement)
+            assignsToVar[moreRecentAssignment, variable]
+            isBetween[moreRecentAssignment, assignment, statement]
         }
 
         // The value comes from this most recent assignment
-        (value = assignment.initial_value or 
-        value = assignment.new_value or
-        value = assignment.moved_value)
+        valueFromAssignment[assignment, value]
+    }
+}
+
+// Determines if the given variable holds the given value at the point in the 
+// program when this statement occurs.
+// NOTE: This *includes* the effect of `statement` itself, so if it is is an 
+// assignment, this will use the assignment's new value.
+pred variableHasValueAtStmt[statement: Statement, variable: Variable, value: Value] {
+    assignsToVar[statement, variable] => {
+        // If the statement itself assigns to the variable, get the value there
+        valueFromAssignment[statement, value]
+    } else {
+        // Otherwise, look for the value it had before this statement
+        variableHasValueBeforeStmt[statement, variable, value]
     }
 }
 
@@ -299,7 +320,7 @@ pred variableHasValueAtStmt[statement: Statement, variable: Variable, value: Val
 // of the source variable involved in the move, at the time of move.
 pred correctMoveValue {
     all move: MoveOrCopy | {
-       variableHasValueAtStmt[move, move.source, move.moved_value] 
+       variableHasValueBeforeStmt[move, move.source, move.moved_value] 
     }
 }
 
@@ -365,7 +386,7 @@ pred initialVariable[variable: Variable, value: Value] {
 pred holdingVariable[variable: Variable, value: Value] {
     some initialVar: Variable | {
         initialVariable[initialVar, value]
-        reachableViaMove[variable, initialVar, value]
+        reachableViaMove[variable, initialVar, value] or variable = initialVar
     }
 }
 
@@ -443,11 +464,9 @@ pred ownedLifetime[owned: Owned] {
 
 // For borrows, the lifetime extends from the point of creation until last use.
 pred borrowLifetime[borrow: Borrow] {
-
     // The start of lifetime is the point of creation
     valueCreated[borrow.value_lifetime.begin, borrow]
 
-    // FIXME: Something is broken here
     // Look for statement that is the _latest_ (as in, most late) use of _any_ 
     // variable that is reachable via move from the initial variable for the borrow
     some holdingVar: Variable | {
@@ -472,8 +491,7 @@ pred borrowLifetime[borrow: Borrow] {
 pred borrowMutLifetime[borrowMut: BorrowMut] {
     // The start of lifetime is the point of creation
     valueCreated[borrowMut.value_lifetime.begin, borrowMut]
-    
-    // FIXME: Something is broken here
+
     // The end is the last use of the last variable this value is moved to
     some lastVar: Variable | {
         lastVariable[lastVar, borrowMut]
@@ -513,4 +531,4 @@ run {
 
     some value: Value, variable: Variable | value.borrow_referent = variable
     some value: Value, variable: Variable | value.borrow_mut_referent = variable
-} for 7 Statement, 5 Variable, 5 Value
+} for 5 Statement, 3 Variable, 5 Value
