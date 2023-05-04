@@ -105,6 +105,15 @@ test suite for validProgramStructure {
         } 
         for 7 Statement
         is unsat
+
+        borrowMutImmutableVar: {
+            validProgramStructure
+            some v: BorrowMut | {
+                no v.borrow_mut_referent.mutable
+            }
+        }
+        for 7 Statement
+        is unsat
     }
 }
 

@@ -220,8 +220,11 @@ pred onlyMutateMutableVars {
 }
 
 // You can only construct an exclusive reference (&mut) to a variable that is declared mut
+// referent of a borrowMut is mutable
 pred onlyBorrowMutMutableVars {
-    // TODO:
+    all borrowMut: BorrowMut | {
+       some borrowMut.borrow_mut_referent.mutable
+    }
 }
 
 // Ensures that all objects in the instance are actually being used in the program.
@@ -346,6 +349,7 @@ pred validProgramStructure {
     sequentialStatements
     variableDeclThenInitThenUsed
     onlyMutateMutableVars
+    onlyBorrowMutMutableVars
     allObjectsParticipating
     uniqueInitialization
     correctMoveValue
@@ -572,8 +576,17 @@ pred borrowMutsAreUnique {
 // - You cannot mutate a variable that is borrowed (either & or &mut)
 // cannot do a move or update statement where the borrowed variable is the source within the lifetme of the borrow of that variable
 pred cannotChangeBorrowedVariable {
-    // TODO: Ria
+    // FIXME: Ria
     //for every borrow, no move or update of the referent within the lifetime of that borrow 
+    all borrowMut: BorrowMut | {
+        no statement: Statement | {
+            isBetween
+            //not sure if this should be isbetweeninclusive or isbetween
+            isBetweenInclusive[statement, borrowMut.value_lifetime.begin, borrowMut.value_lifetime.end]
+            //not sure if this should be variable use, since variable use counts destination and something with values 
+            variableUse[borrowMut.borrow_mut_referent, statement]
+        }
+    }
 }
 
 // Once you move out of a variable, you cannot use it (it becomes uninitialized)

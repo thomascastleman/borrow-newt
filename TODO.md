@@ -14,9 +14,6 @@
   - [ ] Property tests for lifetimes
   - [ ] Property tests for borrow checking
 
-- [ ] Can't borrow variable as mutable if it is not marked `mut` - constrain this under
-      valid program structure somewhere (Ria)
-
 - [ ] Optimizations for efficiency
 
 - [ ] Splitting everything into multiple .frg files based on the comments dividing functionality
