@@ -250,9 +250,13 @@ pred allObjectsParticipating {
         })
     }
 
-    //Optional TODO: constrain curly braces to be useful-> having at least one statement in it 
-    // Could constrain: All curly brace statements must have some declaration *in the inner scope* - 
-    // otherwise, they are just superfluous
+    // Every set of braces that introduces a new scope must serve the purposes of limiting 
+    // the scope of some variable declaration (the declaration appears inside the braces).
+    // Any other use of braces does not impact the meaning of the program.
+    all curly: CurlyBraces | {
+        some curly.inner_scope
+        some decl: DeclareVariable | statementReachable[decl, curly.inner_scope]
+    }
 }
 
 // For every variable, there should be at most one InitializeVariable statement 
@@ -572,21 +576,33 @@ pred borrowMutsAreUnique {
     }
 }
 
-// - You cannot move out of a variable that is borrowed (either & or &mut)
+// - You cannot move out of or into a variable that is borrowed (either & or &mut)
 // - You cannot mutate a variable that is borrowed (either & or &mut)
 // cannot do a move or update statement where the borrowed variable is the source within the lifetme of the borrow of that variable
 pred cannotChangeBorrowedVariable {
     // FIXME: Ria
+    //  - Need to handle both borrow and borrowMut
+
     //for every borrow, no move or update of the referent within the lifetime of that borrow 
     all borrowMut: BorrowMut | {
         no statement: Statement | {
-            isBetween
-            //not sure if this should be isbetweeninclusive or isbetween
-            isBetweenInclusive[statement, borrowMut.value_lifetime.begin, borrowMut.value_lifetime.end]
+            duringLifetime[statement, borrowMut]
+            
+            // Thomas: variableUse won't be exactly what we want since it includes creating
+            // borrows (& or &mut) as use, which wouldn't be okay to use for Borrow since you
+            // can create multiple of them during each other's lifetimes.
+            // But a better reason that it won't work is that the creation of the borrow
+            // (which is always within the lifetime of the borrow) is counted as a use.
+
             //not sure if this should be variable use, since variable use counts destination and something with values 
             variableUse[borrowMut.borrow_mut_referent, statement]
         }
     }
+}
+
+// Determines if a given value is a borrow (&).
+pred isBorrow[value: Value] {
+    some value.borrow_referent
 }
 
 // Once you move out of a variable, you cannot use it (it becomes uninitialized)
@@ -602,7 +618,13 @@ pred cannotChangeBorrowedVariable {
 // Variable3 = Variable2;
 // // Now, Variable2 cannot be used (was moved out of)
 pred cannotUseAfterMove {
-    // TODO: Thomas
+    // For every move that moves a value other than a borrow (i.e., a value with move semantics)
+    all move: MoveOrCopy | (!isBorrow[move.moved_value] and move.source != move.destination) => {
+        // All subsequent statements do not use the variable that was moved out of
+        all laterStatement: Statement | isBefore[move, laterStatement] => {
+            not variableUse[move.source, laterStatement]
+        }
+    }
 }
 
 // The lifetime of a borrow of a value must be contained within the lifetime of the value
@@ -618,12 +640,11 @@ pred satisfiesBorrowChecking {
     borrowAliveDuringValueLifetime
 }
 
-
 run {
     validProgramStructure
     lifetimesCorrect
     satisfiesBorrowChecking
 
-    some value: Value, variable: Variable | value.borrow_referent = variable
+    // some value: Value, variable: Variable | value.borrow_referent = variable
     some value: Value, variable: Variable | value.borrow_mut_referent = variable
-} for 5 Statement, 3 Variable, 5 Value
+} for 6 Statement, 3 Variable, 5 Value
