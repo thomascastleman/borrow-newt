@@ -161,14 +161,19 @@ pred sequentialStatements {
     all s: Statement | statementReachableInclusive[s, Program.program_start]
 }
 
+// Determines if the given variable is being modified either by reassigning to a new value or moving into or out of the variable
+pred variableModification[variable: Variable, statement: Statement] {
+    statement.updated_variable = variable or    // Being reassigned to
+    statement.source = variable or              // Being moved out of
+    statement.destination = variable            // Being moved into
+}
+
 // Determines if the given variable is being "used" in the given statement.
 // NOTE: Excludes declaration and initialization, because if initializing 
 // is considered use, and use before initialization is illegal, then 
 // you can never initialize.
 pred variableUse[variable: Variable, statement: Statement] {
-    statement.updated_variable = variable or    // Being reassigned to
-    statement.source = variable or              // Being moved out of
-    statement.destination = variable or         // Being moved into
+    variableModification[variable, statement] or
 
     // Account for uses of variables that are embedded in values, e.g. &mut a
     (some value: Value | {
@@ -255,7 +260,9 @@ pred allObjectsParticipating {
     // Any other use of braces does not impact the meaning of the program.
     all curly: CurlyBraces | {
         some curly.inner_scope
-        some decl: DeclareVariable | statementReachable[decl, curly.inner_scope]
+        some decl: DeclareVariable | {
+            statementReachableOnlyNext[decl, curly.inner_scope] or decl = curly.inner_scope
+        }
     }
 }
 
@@ -580,22 +587,18 @@ pred borrowMutsAreUnique {
 // - You cannot mutate a variable that is borrowed (either & or &mut)
 // cannot do a move or update statement where the borrowed variable is the source within the lifetme of the borrow of that variable
 pred cannotChangeBorrowedVariable {
-    // FIXME: Ria
-    //  - Need to handle both borrow and borrowMut
-
-    //for every borrow, no move or update of the referent within the lifetime of that borrow 
+    //for every mutable borrow, no move or update of the referent within the lifetime of that borrow 
     all borrowMut: BorrowMut | {
         no statement: Statement | {
             duringLifetime[statement, borrowMut]
-            
-            // Thomas: variableUse won't be exactly what we want since it includes creating
-            // borrows (& or &mut) as use, which wouldn't be okay to use for Borrow since you
-            // can create multiple of them during each other's lifetimes.
-            // But a better reason that it won't work is that the creation of the borrow
-            // (which is always within the lifetime of the borrow) is counted as a use.
-
-            //not sure if this should be variable use, since variable use counts destination and something with values 
-            variableUse[borrowMut.borrow_mut_referent, statement]
+            variableModification[borrowMut.borrow_mut_referent, statement]
+        }
+    }
+    // Likewise for borrows
+    all borrow: Borrow | {
+        no statement: Statement | {
+            duringLifetime[statement, borrow]
+            variableModification[borrow.borrow_referent, statement]
         }
     }
 }
@@ -627,9 +630,30 @@ pred cannotUseAfterMove {
     }
 }
 
+// Extract the referent variable of a given value, or none if the value is an Owned.
+fun referent(borrow: Value): Variable {
+    some borrow.borrow_referent => borrow.borrow_referent else borrow.borrow_mut_referent
+}
+
 // The lifetime of a borrow of a value must be contained within the lifetime of the value
 pred borrowAliveDuringValueLifetime {
-    // TODO: Ria
+    // For any kind of borrow (& and &mut)
+    all borrow: Value | {
+        let referentVariable = referent[borrow] {
+            some referentVariable => {
+                // Find the statement where the borrow was created, and the value of the 
+                // variable being borrowed at that point in the program.
+                some pointOfCreation: Statement, referentValue: Value | {
+                    valueCreated[pointOfCreation, borrow]
+                    variableHasValueAtStmt[pointOfCreation, referentVariable, referentValue]
+
+                    // The borrow's lifetime is within the lifetime of the referent value
+                    duringLifetime[borrow.value_lifetime.begin, referentValue]
+                    duringLifetime[borrow.value_lifetime.end, referentValue]
+                }
+            }
+        }
+    }
 }
 
 // Does the program pass the borrow checker.
@@ -645,6 +669,6 @@ run {
     lifetimesCorrect
     satisfiesBorrowChecking
 
-    // some value: Value, variable: Variable | value.borrow_referent = variable
+    some value: Value, variable: Variable | value.borrow_referent = variable
     some value: Value, variable: Variable | value.borrow_mut_referent = variable
-} for 6 Statement, 3 Variable, 5 Value
+} for 7 Statement, 3 Variable, 5 Value

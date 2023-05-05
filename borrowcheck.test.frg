@@ -14,10 +14,6 @@ pred validAndFailsBorrowCheck {
     not satisfiesBorrowChecking
 }
 
-fun referent(borrow: Value): Variable {
-    some borrow.borrow_referent => borrow.borrow_referent else borrow.borrow_mut_referent
-}
-
 pred sameReferent[borrow1: Value, borrow2: Value] {
     let referent1 = referent[borrow1] | {
         let referent2 = referent[borrow2] | {
