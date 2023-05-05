@@ -52,6 +52,7 @@ function convertToLines(starting_statement, lines, indent_level) {
   let curr_statement = starting_statement;
 
   while (true) {
+    // TODO: Add type information to declaration so it can be visualized
     //statement is a declaration
     if (hasField(curr_statement, declared_variable_field)) {
       const variable = curr_statement.join(declared_variable_field);

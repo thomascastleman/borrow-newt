@@ -10,12 +10,25 @@ sig Lifetime {
     end: one Statement
 }
 
+abstract sig Type {}
+
+sig OwnedType extends Type {}
+sig BorrowType extends Type {
+    borrow_referent_type: one Type
+}
+sig BorrowMutType extends Type {
+    borrow_mut_referent_type: one Type
+}
+
 one sig Mutable {}
 
 // A variable represents a 'place' where a value can be stored.
 sig Variable {
     // Whether this variable is being declared as mutable or not.
-    mutable: lone Mutable
+    mutable: lone Mutable,
+
+    // The type of values this variable can hold.
+    type: one Type
 }
 
 // ============================== Values ==============================
@@ -142,6 +155,38 @@ pred isBetweenInclusive[middle: Statement, start: Statement, end: Statement] {
     middle = start or 
     middle = end or
     isBetween[middle, start, end]
+}
+
+// Determines if a given value is an owned value.
+pred isOwned[value: Value] {
+    no value.borrow_referent
+    no value.borrow_mut_referent
+}
+
+// Determines if a given type is an owned type.
+pred isOwnedType[type: Type] {
+    no type.borrow_referent_type
+    no type.borrow_mut_referent_type
+}
+
+// Determines if a given value is a borrow (&).
+pred isBorrow[value: Value] {
+    some value.borrow_referent
+}
+
+// Determines if a given type is a borrow type.
+pred isBorrowType[type: Type] {
+    some type.borrow_referent_type
+}
+
+// Determines if a given value is a mutable borrow.
+pred isBorrowMut[value: Value] {
+    some value.borrow_mut_referent
+}
+
+// Determines if a given type is a borrow mut type.
+pred isBorrowMutType[type: Type] {
+    some type.borrow_mut_referent_type
 }
 
 
@@ -355,6 +400,55 @@ pred correctMoveValue {
     }
 }
 
+
+pred valueHasType[value: Value, type: Type] {
+    // Owned values
+    (isOwned[value] and isOwnedType[type]) or
+
+    // Borrows
+    {
+        isBorrow[value] 
+        isBorrowType[type] 
+        sameType[value.borrow_referent.type, type.borrow_referent_type])
+    } or
+
+    // Mutable borrows
+    {
+        isBorrowMut[value] 
+        isBorrowMutType[type] 
+        sameType[value.borrow_mut_referent.type, type.borrow_mut_referent_type])
+    }
+}
+
+pred sameType[t1: Type, t2: Type] {
+    (isOwnedType[t1] and isOwnedType[t2]) or
+
+    {
+        // TODO: Nested types (borrow and borrow mut)
+        // Idea: 
+        // For every type reachable from t1 using borrow_referent_type and borrow_mut_referent_type
+        //   There is some type reachable from t2 using ^^ such that:
+        //     The "outermost" types match (both owned, or both borrow, or both borrowmut) and
+        //     The size of the set of types reachable from the subtype of t1 is equal to the size
+        //     of the same kind of set for the t2 subtype
+    }
+}
+
+// Checks the program for type errors.
+pred passesTypeCheck {
+    // All initializations / updates / moves into a variable must use a value 
+    // that matches the annotated type of the variable.
+    all variable: Variable, value: Value, assignment: Statement, valueType: Type | {
+        {
+            assignsToVar[assignment, variable]
+            valueFromAssignment[assignment, value]
+            valueHasType[value, valueType]
+        } => {
+            sameType[variable.type, valueType]
+        }
+    }
+}
+
 pred validProgramStructure {
     innerScopeValid
     sequentialStatements
@@ -364,6 +458,7 @@ pred validProgramStructure {
     allObjectsParticipating
     uniqueInitialization
     correctMoveValue
+    passesTypeCheck
 }
 
 // ============================== Lifetimes ==============================
@@ -603,10 +698,6 @@ pred cannotChangeBorrowedVariable {
     }
 }
 
-// Determines if a given value is a borrow (&).
-pred isBorrow[value: Value] {
-    some value.borrow_referent
-}
 
 // Once you move out of a variable, you cannot use it (it becomes uninitialized)
 // Note that with borrows (shared references), a copy is performed and 
