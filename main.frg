@@ -28,7 +28,7 @@ sig Variable {
     mutable: lone Mutable,
 
     // The type of values this variable can hold.
-    type: one Type
+    variable_type: one Type
 }
 
 // ============================== Values ==============================
@@ -299,7 +299,6 @@ pred allObjectsParticipating {
             (s.initial_value = value) or (s.new_value = value)
         })
     }
-
     // Every set of braces that introduces a new scope must serve the purposes of limiting 
     // the scope of some variable declaration (the declaration appears inside the braces).
     // Any other use of braces does not impact the meaning of the program.
@@ -309,6 +308,16 @@ pred allObjectsParticipating {
             statementReachableOnlyNext[decl, curly.inner_scope] or decl = curly.inner_scope
         }
     }
+    // Every type can be reached from exactly one variable type annotation. 
+    // No types just floating around, and type for each variable is unique.
+    all type: Type | {
+        one variable: Variable | {
+            reachable[type, variable.variable_type, borrow_referent_type, borrow_mut_referent_type] or 
+            type = variable.variable_type
+        }
+    }
+    // Do not allow moves from the same variable to itself, as they do nothing.
+    no move: MoveOrCopy | move.source = move.destination
 }
 
 // For every variable, there should be at most one InitializeVariable statement 
@@ -400,51 +409,71 @@ pred correctMoveValue {
     }
 }
 
+// Determines if the given types match at the outermost level, without checking equivalence of nested types.
+pred surfaceTypeMatches[t1: Type, t2: Type] {
+    (isOwnedType[t1] and isOwnedType[t2]) or
+    (isBorrowType[t1] and isBorrowType[t2]) or
+    (isBorrowMutType[t1] and isBorrowMutType[t2])
+}
 
-pred valueHasType[value: Value, type: Type] {
-    // Owned values
-    (isOwned[value] and isOwnedType[type]) or
+// Determines if the given types are equal.
+pred sameType[t1: Type, t2: Type] {
+    // At the outermost level, the types must match
+    surfaceTypeMatches[t1, t2]
 
-    // Borrows
-    {
-        isBorrow[value] 
-        isBorrowType[type] 
-        sameType[value.borrow_referent.type, type.borrow_referent_type])
-    } or
+    // Construct a relation that represents reachability from an outer type to the types 
+    // nested inside it, by taking the transitive closure of the union of the referent fields.
+    let reachableNestedTypes = ^(borrow_referent_type + borrow_mut_referent_type) | {
+        // The nesting depth of both types is the same
+        // NOTE: This is necessary since we quantify over all nested types in t1 below and match
+        // them to types in t2, which could still be satisfied if t2 was a superset of t1.
+        #(t1.reachableNestedTypes) = #(t2.reachableNestedTypes)
 
-    // Mutable borrows
-    {
-        isBorrowMut[value] 
-        isBorrowMutType[type] 
-        sameType[value.borrow_mut_referent.type, type.borrow_mut_referent_type])
+        // For every nested type within t1
+        all nestedType1: Type | (nestedType1 in t1.reachableNestedTypes) => {
+            // There is some corresponding nested type within t2, such that
+            some nestedType2: Type | {
+                nestedType2 in t2.reachableNestedTypes
+
+                // The nested types match on the surface (same kind of borrow, or both owned)
+                surfaceTypeMatches[nestedType1, nestedType2]
+
+                // The nesting depth is the same (they are at the same "position" in the type)
+                #(nestedType1.reachableNestedTypes) = #(nestedType2.reachableNestedTypes)
+            }
+        }
     }
 }
 
-pred sameType[t1: Type, t2: Type] {
-    (isOwnedType[t1] and isOwnedType[t2]) or
-
+// Determines if the given value has the given type.
+pred valueHasType[value: Value, type: Type] {
+    // Owned values: Only need to match at the surface level
+    (isOwned[value] and isOwnedType[type]) or
+    // Borrows: The value should be a borrow and the variable it was constructed from 
+    // must have a type that matches the referent part of the given type.
     {
-        // TODO: Nested types (borrow and borrow mut)
-        // Idea: 
-        // For every type reachable from t1 using borrow_referent_type and borrow_mut_referent_type
-        //   There is some type reachable from t2 using ^^ such that:
-        //     The "outermost" types match (both owned, or both borrow, or both borrowmut) and
-        //     The size of the set of types reachable from the subtype of t1 is equal to the size
-        //     of the same kind of set for the t2 subtype
+        isBorrow[value] 
+        isBorrowType[type] 
+        sameType[(value.borrow_referent).variable_type, type.borrow_referent_type]
+    } or
+    // Mutable borrows: Same as borrows
+    {
+        isBorrowMut[value] 
+        isBorrowMutType[type] 
+        sameType[(value.borrow_mut_referent).variable_type, type.borrow_mut_referent_type]
     }
 }
 
 // Checks the program for type errors.
 pred passesTypeCheck {
+    // No cycles: No type can reach itself
+    no type: Type | reachable[type, type, borrow_referent_type, borrow_mut_referent_type]
+
     // All initializations / updates / moves into a variable must use a value 
     // that matches the annotated type of the variable.
-    all variable: Variable, value: Value, assignment: Statement, valueType: Type | {
-        {
-            assignsToVar[assignment, variable]
-            valueFromAssignment[assignment, value]
-            valueHasType[value, valueType]
-        } => {
-            sameType[variable.type, valueType]
+    all variable: Variable, value: Value, assignment: Statement | {
+        (assignsToVar[assignment, variable] and valueFromAssignment[assignment, value]) => {
+            valueHasType[value, variable.variable_type]
         }
     }
 }
@@ -760,6 +789,6 @@ run {
     lifetimesCorrect
     satisfiesBorrowChecking
 
-    some value: Value, variable: Variable | value.borrow_referent = variable
-    some value: Value, variable: Variable | value.borrow_mut_referent = variable
-} for 7 Statement, 3 Variable, 5 Value
+    // some value: Value, variable: Variable | value.borrow_referent = variable
+    // some value: Value, variable: Variable | value.borrow_mut_referent = variable
+} for 7 Statement, 5 Variable, 5 Value
