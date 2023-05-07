@@ -158,6 +158,7 @@ const LABELS_OFFSET = 370; // How much to offset the labels horizontally from th
 const BASE_OFFSET = 20; // How much to offset in the X/Y by default so that the program isn't partially cut off.
 const LINE_HEIGHT = 20; // The height of each line of text
 const INDENT_AMOUNT = 20; // Size of indentation
+const CENTERING_OFFSET = 5; // Offset for vertically centering the lifetime bounding boxes
 
 function visualizeLines(lines) {
   let values = [];
@@ -206,24 +207,65 @@ function visualizeLines(lines) {
     }
   }
 
-  if (SHOW_LABELS) {
-    // Display what the lifetime is for each value in the instance,
-    // below the program visualization.
-    for (let i = 0; i < values.length; i++) {
-      const x_offset = BASE_OFFSET;
-      const y_offset = BASE_OFFSET + (lines.length + i + 1) * LINE_HEIGHT;
+  // Find where in the given list of ProgramLines the given statement occurs
+  function indexOfStmtInLines(stmt, lines) {
+    for (let i = 0; i < lines.length; i++) {
+      // NOTE: We use numberFromObject here because the statement objects were not comparing equal properly
+      if (numberFromObject(lines[i].statement) == numberFromObject(stmt)) {
+        return i;
+      }
+    }
 
-      const lifetime = values[i].join(value_lifetime_field);
-      const beginStmt = lifetime.join(begin_field);
-      const endStmt = lifetime.join(end_field);
+    return -1;
+  }
 
+  function randomColor() {
+    // Credit to https://stackoverflow.com/questions/1267283/how-can-i-pad-a-value-with-leading-zeros
+    // for padding with leading 0s.
+    return (
+      "#" +
+      (
+        "000000" + Math.floor(Math.random() * Math.pow(2, 24)).toString(16)
+      ).slice(-6)
+    );
+  }
+
+  // Display what the lifetime is for each value in the instance,
+  // below the program visualization.
+  for (let i = 0; i < values.length; i++) {
+    const labelXOffset = BASE_OFFSET;
+    const labelYOffset = BASE_OFFSET + (lines.length + i + 1) * LINE_HEIGHT;
+
+    const lifetime = values[i].join(value_lifetime_field);
+    const beginStmt = lifetime.join(begin_field);
+    const endStmt = lifetime.join(end_field);
+
+    const beginOffset = indexOfStmtInLines(beginStmt, lines) * LINE_HEIGHT;
+    const endOffset = indexOfStmtInLines(endStmt, lines) * LINE_HEIGHT;
+
+    const valueColor = randomColor();
+
+    // Draw a box around the lifetime region
+    d3.select(svg)
+      .append("rect")
+      .attr("x", BASE_OFFSET)
+      .attr("y", CENTERING_OFFSET + beginOffset)
+      .attr("width", 300 + Math.floor(Math.random() * 10))
+      .attr("height", endOffset - beginOffset + LINE_HEIGHT)
+      .attr("fill-opacity", 0.2)
+      .attr("fill", valueColor)
+      .attr("stroke-width", 2)
+      .attr("stroke-opacity", 1)
+      .attr("stroke", valueColor);
+
+    if (SHOW_LABELS) {
       d3.select(svg)
         .append("text")
-        .style("fill", "gray")
+        .style("fill", valueColor)
         .style("font-family", "monospace")
         .style("font-size", "16")
-        .attr("x", x_offset)
-        .attr("y", y_offset)
+        .attr("x", labelXOffset)
+        .attr("y", labelYOffset)
         .text(`${values[i]} lives from ${beginStmt} to ${endStmt}`);
     }
   }

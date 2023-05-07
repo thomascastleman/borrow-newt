@@ -6,7 +6,11 @@
 
   - [ ] Visualize lifetimes
 
-    - Use some kind of bounding box around the relevant statements, color-coded by value?
+    - [x] Use some kind of bounding box around the relevant statements, color-coded by value?
+    - [ ] Visualize the bounding boxes first, then the text ON TOP of it, so that
+          you can see the text better
+
+    - [ ] Vary the width of the boxes so that overlap is easier to see
 
   - [x] Changes to visualization so that programs can be pasted and run
 
