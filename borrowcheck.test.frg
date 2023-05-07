@@ -29,14 +29,14 @@ test suite for satisfiesBorrowChecking {
         borrowCheckVacuity: {
             validAndBorrowChecks
         } 
-        for 7 Statement
+        for 7 Statement, 5 Type
         is sat
 
         // Important to also check that it is possible to *fail* borrow checking for otherwise valid programs.
         borrowCheckFailVacuity: {
             validAndFailsBorrowCheck
         }
-        for 7 Statement
+        for 7 Statement, 5 Type
         is sat
 
         // Multiple borrows (&) of a given variable can exist at the same time.
@@ -51,8 +51,8 @@ test suite for satisfiesBorrowChecking {
                 lifetimesOverlap[borrow1, borrow2]
             }
         }
-        for 7 Statement
-        is sat
+        for 7 Statement, 5 Type
+        is sat 
 
         // It is invalid to have any other kind of borrow of some variable while there is a 
         // mutable borrow (&mut) to it that is alive.
@@ -65,7 +65,7 @@ test suite for satisfiesBorrowChecking {
                 lifetimesOverlap[borrowMut, otherBorrow]
             }
         }
-        for 7 Statement
+        for 7 Statement, 5 Type
         is unsat 
 
         // TODO: Other property tests

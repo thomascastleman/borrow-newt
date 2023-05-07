@@ -308,10 +308,10 @@ pred allObjectsParticipating {
             statementReachableOnlyNext[decl, curly.inner_scope] or decl = curly.inner_scope
         }
     }
-    // Every type can be reached from exactly one variable type annotation. 
-    // No types just floating around, and type for each variable is unique.
+    // Every type can be reached from some variable type annotation. 
+    // No types just floating around.
     all type: Type | {
-        one variable: Variable | {
+        some variable: Variable | {
             reachable[type, variable.variable_type, borrow_referent_type, borrow_mut_referent_type] or 
             type = variable.variable_type
         }
@@ -788,7 +788,4 @@ run {
     validProgramStructure
     lifetimesCorrect
     satisfiesBorrowChecking
-
-    // some value: Value, variable: Variable | value.borrow_referent = variable
-    // some value: Value, variable: Variable | value.borrow_mut_referent = variable
-} for 7 Statement, 5 Variable, 5 Value
+} for 7 Statement, 5 Variable, 5 Value, 5 Type
