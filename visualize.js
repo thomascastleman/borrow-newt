@@ -16,28 +16,17 @@ const destination_field = instance.field("destination");
 const borrow_field = instance.field("borrow_referent");
 const borrow_mut_field = instance.field("borrow_mut_referent");
 const mutable_field = instance.field("mutable");
+const variable_type_field = instance.field("variable_type");
 const value_lifetime_field = instance.field("value_lifetime");
 const begin_field = instance.field("begin");
 const end_field = instance.field("end");
+const borrow_referent_type_field = instance.field("borrow_referent_type");
+const borrow_mut_referent_type_field = instance.field(
+  "borrow_mut_referent_type"
+);
 
 // First statement of the entire program
 const first_statement = program.join(program_start_field);
-
-// Check if a sig has a given field defined.
-function hasField(sig, field) {
-  return sig.join(field).tuples().length != 0;
-}
-
-// Convert a value (owned, borrow, or borrow mut) to its visualization.
-function valueToString(value) {
-  if (hasField(value, borrow_field)) {
-    return "&" + value.join(borrow_field);
-  } else if (hasField(value, borrow_mut_field)) {
-    return "&mut " + value.join(borrow_mut_field);
-  } else {
-    return value;
-  }
-}
 
 class ProgramLine {
   constructor(text, indent_level, statement) {
@@ -47,21 +36,59 @@ class ProgramLine {
   }
 }
 
+// Check if a sig has a given field defined.
+function hasField(sig, field) {
+  return sig.join(field).tuples().length != 0;
+}
+
+// Extract the number suffix from an object name (e.g. '4' from 'Variable4')
+function numberFromObject(object) {
+  const objectAsString = `${object}`;
+  return objectAsString[objectAsString.length - 1];
+}
+
+// Convert a value object (owned, borrow, or borrow mut) to its visualization.
+function valueToString(value) {
+  if (hasField(value, borrow_field)) {
+    return "&" + variableToString(value.join(borrow_field));
+  } else if (hasField(value, borrow_mut_field)) {
+    return "&mut " + variableToString(value.join(borrow_mut_field));
+  } else {
+    return `Box::new(${numberFromObject(value)})`;
+  }
+}
+
+// Convert a type object to its visualization.
+function typeToString(type) {
+  if (hasField(type, borrow_referent_type_field)) {
+    return "&" + typeToString(type.join(borrow_referent_type_field));
+  } else if (hasField(type, borrow_mut_referent_type_field)) {
+    return "&mut " + typeToString(type.join(borrow_mut_referent_type_field));
+  } else {
+    return "Box<i32>";
+  }
+}
+
+// Convert a variable object to its visualization.
+function variableToString(variable) {
+  // Shorten variable names to v + number for brevity and less style warnings from rustc
+  return `v${numberFromObject(variable)}`;
+}
+
 // Convert a sequence of statements into ProgramLines, which represent syntax.
 function convertToLines(starting_statement, lines, indent_level) {
   let curr_statement = starting_statement;
+  let text;
 
   while (true) {
-    // TODO: Add type information to declaration so it can be visualized
     //statement is a declaration
     if (hasField(curr_statement, declared_variable_field)) {
       const variable = curr_statement.join(declared_variable_field);
+      const typeString = typeToString(variable.join(variable_type_field));
+      const mut = hasField(variable, mutable_field) ? "mut " : "";
+      const variableString = variableToString(variable);
 
-      if (hasField(variable, mutable_field)) {
-        text = "let mut " + variable + ";";
-      } else {
-        text = "let " + variable + ";";
-      }
+      text = "let " + mut + variableString + ": " + typeString + ";";
 
       lines.push(new ProgramLine(text, indent_level, curr_statement));
     }
@@ -70,8 +97,7 @@ function convertToLines(starting_statement, lines, indent_level) {
     else if (hasField(curr_statement, initialized_variable_field)) {
       const variable = curr_statement.join(initialized_variable_field);
       const value = curr_statement.join(initial_value_field);
-      text = "" + variable + " = ";
-      text += valueToString(value) + ";";
+      text = variableToString(variable) + " = " + valueToString(value) + ";";
       lines.push(new ProgramLine(text, indent_level, curr_statement));
     }
 
@@ -79,13 +105,13 @@ function convertToLines(starting_statement, lines, indent_level) {
     else if (hasField(curr_statement, updated_variable_field)) {
       const variable = curr_statement.join(updated_variable_field);
       const value = curr_statement.join(new_value_field);
-      text = variable + " = " + valueToString(value) + ";";
+      text = variableToString(variable) + " = " + valueToString(value) + ";";
       lines.push(new ProgramLine(text, indent_level, curr_statement));
     } else if (hasField(curr_statement, moved_value_field)) {
-      const src = curr_statement.join(source_field);
-      const dst = curr_statement.join(destination_field);
+      const src = variableToString(curr_statement.join(source_field));
 
       if (hasField(curr_statement, destination_field)) {
+        const dst = variableToString(curr_statement.join(destination_field));
         text = dst + " = " + src + ";";
       } else {
         text = "move_to_func(" + src + ");";
@@ -128,7 +154,7 @@ function convertLinesToString(lines) {
 }
 
 const SHOW_LABELS = true; // Whether to show additional metadata about the instance, for debugging
-const LABELS_OFFSET = 350; // How much to offset the labels horizontally from the left
+const LABELS_OFFSET = 370; // How much to offset the labels horizontally from the left
 const BASE_OFFSET = 20; // How much to offset in the X/Y by default so that the program isn't partially cut off.
 const LINE_HEIGHT = 20; // The height of each line of text
 const INDENT_AMOUNT = 20; // Size of indentation

@@ -1,17 +1,16 @@
 # To do
 
-- [ ] We don't model the "copy" behavior of shared references, which shouldn't be "movable"
+- [ ] Visualization updates
 
-  - Should we just have an UpdateVariable statement instead of Move, which
-    behaves like a move if the thing is movable, and behaves like a copy otherwise
+  - [x] Visualize types on declarations
 
-- [ ] Visualize lifetimes
+  - [ ] Visualize lifetimes
 
-  - Use some kind of bounding box around the relevant statements, color-coded by value?
+    - Use some kind of bounding box around the relevant statements, color-coded by value?
 
-- [ ] Changes to visualization so that programs can be pasted and run
+  - [x] Changes to visualization so that programs can be pasted and run
 
-  - Don't use Value0, etc, for owned, use Box or other type
+    - Don't use Value0, etc, for owned, use Box or other type
 
 - [ ] Testing
 
@@ -21,6 +20,11 @@
 - [ ] Optimizations for efficiency
 
 - [ ] Splitting everything into multiple .frg files based on the comments dividing functionality
+
+- [ ] More constraints to eliminate insignificant differences between instances, so that
+      each instance really represents a different program.
+  - E.g. adding `mut` to a variable that isn't mutated
+  - Curly braces that don't have a `next`
 
 # Bugs
 
