@@ -158,11 +158,57 @@ const LABELS_OFFSET = 370; // How much to offset the labels horizontally from th
 const BASE_OFFSET = 20; // How much to offset in the X/Y by default so that the program isn't partially cut off.
 const LINE_HEIGHT = 20; // The height of each line of text
 const INDENT_AMOUNT = 20; // Size of indentation
+const SHOW_LIFETIME_BOXES = true; // Whether to show the bounding boxes around lifetime regions
 const CENTERING_OFFSET = 5; // Offset for vertically centering the lifetime bounding boxes
+const BASE_BOX_WIDTH = 300; // Box width for lifetime boxes
 
-function visualizeLines(lines) {
+// Find where in the given list of ProgramLines the given statement occurs
+function indexOfStmtInLines(stmt, lines) {
+  for (let i = 0; i < lines.length; i++) {
+    // NOTE: We use numberFromObject here because the statement objects were not comparing equal properly
+    if (numberFromObject(lines[i].statement) == numberFromObject(stmt)) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+function randomColor() {
+  // Credit to https://stackoverflow.com/questions/1267283/how-can-i-pad-a-value-with-leading-zeros
+  // for padding with leading 0s.
+  return (
+    "#" +
+    ("000000" + Math.floor(Math.random() * Math.pow(2, 24)).toString(16)).slice(
+      -6
+    )
+  );
+}
+
+function valuesFromLines(lines) {
   let values = [];
 
+  for (let i = 0; i < lines.length; i++) {
+    const statement = lines[i].statement;
+
+    if (statement) {
+      let value;
+      if (hasField(statement, initial_value_field)) {
+        value = statement.join(initial_value_field);
+      } else if (hasField(statement, new_value_field)) {
+        value = statement.join(new_value_field);
+      }
+
+      if (value) {
+        values.push(value);
+      }
+    }
+  }
+
+  return values;
+}
+
+function visualizeLines(lines) {
   for (let i = 0; i < lines.length; i++) {
     const x_offset = BASE_OFFSET + lines[i].indent_level * INDENT_AMOUNT;
     const y_offset = BASE_OFFSET + i * LINE_HEIGHT;
@@ -193,7 +239,6 @@ function visualizeLines(lines) {
 
       if (value) {
         label += " " + value;
-        values.push(value);
       }
 
       d3.select(svg)
@@ -206,29 +251,39 @@ function visualizeLines(lines) {
         .text(label);
     }
   }
+}
 
-  // Find where in the given list of ProgramLines the given statement occurs
-  function indexOfStmtInLines(stmt, lines) {
-    for (let i = 0; i < lines.length; i++) {
-      // NOTE: We use numberFromObject here because the statement objects were not comparing equal properly
-      if (numberFromObject(lines[i].statement) == numberFromObject(stmt)) {
-        return i;
-      }
+// Determine the "nestedness" of a value by counting how many other lifetimes its
+// lifetime is fully contained within.
+function valueNestedness(lifetimeBegin, lifetimeEnd, values, lines) {
+  const beginIndex = indexOfStmtInLines(lifetimeBegin, lines);
+  const endIndex = indexOfStmtInLines(lifetimeEnd, lines);
+  let nestedness = 0;
+
+  for (let i = 0; i < values.length; i++) {
+    let otherValue = values[i];
+    let otherLifetime = otherValue.join(value_lifetime_field);
+    let otherLifetimeBegin = otherLifetime.join(begin_field);
+    let otherLifetimeEnd = otherLifetime.join(end_field);
+
+    let otherBeginIndex = indexOfStmtInLines(otherLifetimeBegin, lines);
+    let otherEndIndex = indexOfStmtInLines(otherLifetimeEnd, lines);
+
+    if (
+      beginIndex >= otherBeginIndex &&
+      beginIndex <= otherEndIndex &&
+      endIndex >= otherBeginIndex &&
+      endIndex <= otherEndIndex
+    ) {
+      nestedness++;
     }
-
-    return -1;
   }
 
-  function randomColor() {
-    // Credit to https://stackoverflow.com/questions/1267283/how-can-i-pad-a-value-with-leading-zeros
-    // for padding with leading 0s.
-    return (
-      "#" +
-      (
-        "000000" + Math.floor(Math.random() * Math.pow(2, 24)).toString(16)
-      ).slice(-6)
-    );
-  }
+  return nestedness;
+}
+
+function visualizeLifetimes(lines) {
+  const values = valuesFromLines(lines);
 
   // Display what the lifetime is for each value in the instance,
   // below the program visualization.
@@ -245,18 +300,32 @@ function visualizeLines(lines) {
 
     const valueColor = randomColor();
 
-    // Draw a box around the lifetime region
-    d3.select(svg)
-      .append("rect")
-      .attr("x", BASE_OFFSET)
-      .attr("y", CENTERING_OFFSET + beginOffset)
-      .attr("width", 300 + Math.floor(Math.random() * 10))
-      .attr("height", endOffset - beginOffset + LINE_HEIGHT)
-      .attr("fill-opacity", 0.2)
-      .attr("fill", valueColor)
-      .attr("stroke-width", 2)
-      .attr("stroke-opacity", 1)
-      .attr("stroke", valueColor);
+    console.log(
+      values[i] +
+        " nestedness: " +
+        valueNestedness(beginStmt, endStmt, values, lines)
+    );
+
+    if (SHOW_LIFETIME_BOXES) {
+      // Draw a box around the lifetime region
+      // NOTE: There is a small noise added to the box width, so that you
+      // can more easily see which boxes contain others.
+      d3.select(svg)
+        .append("rect")
+        .attr("x", BASE_OFFSET)
+        .attr("y", CENTERING_OFFSET + beginOffset)
+        .attr(
+          "width",
+          BASE_BOX_WIDTH -
+            valueNestedness(beginStmt, endStmt, values, lines) * 5
+        )
+        .attr("height", endOffset - beginOffset + LINE_HEIGHT)
+        .attr("fill-opacity", 0.2)
+        .attr("fill", valueColor)
+        .attr("stroke-width", 2)
+        .attr("stroke-opacity", 1)
+        .attr("stroke", valueColor);
+    }
 
     if (SHOW_LABELS) {
       d3.select(svg)
@@ -273,7 +342,12 @@ function visualizeLines(lines) {
 
 let lines = [];
 convertToLines(first_statement, lines, 0);
+
+// NOTE: Visualize the lifetime boxes *first*, then the program text on top of it,
+// so that the text is more readable and doesn't get covered by the box colors.
+visualizeLifetimes(lines);
 visualizeLines(lines);
+
 const programAsString = convertLinesToString(lines);
 
 // Copy the program text to the clipboard, so it can be pasted and run if necessary

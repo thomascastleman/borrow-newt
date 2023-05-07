@@ -7,10 +7,15 @@
   - [ ] Visualize lifetimes
 
     - [x] Use some kind of bounding box around the relevant statements, color-coded by value?
-    - [ ] Visualize the bounding boxes first, then the text ON TOP of it, so that
+    - [x] Visualize the bounding boxes first, then the text ON TOP of it, so that
           you can see the text better
 
-    - [ ] Vary the width of the boxes so that overlap is easier to see
+    - [x] Vary the width of the boxes so that overlap is easier to see
+          Ideally, this would depend on how "nested" a lifetime is within other lifetimes
+
+    - [ ] Actually calculate what the max width of the program text is, so we can
+          choose a base width for the bounding boxes appropriately (and also an
+          offset for the statement labels)
 
   - [x] Changes to visualization so that programs can be pasted and run
 
