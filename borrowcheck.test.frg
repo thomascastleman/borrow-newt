@@ -23,20 +23,56 @@ pred sameReferent[borrow1: Value, borrow2: Value] {
     }
 }
 
+pred useAfterMove {
+    some variable: Variable, moveOutOf: MoveOrCopy, use: Statement | {
+        moveOutOf.source = variable
+        moveOutOf.destination != variable
+        not isBorrow[moveOutOf.moved_value]
+
+        variableUse[variable, use]
+
+        isBefore[moveOutOf, use]
+    }
+}
+
+pred borrowOutlivesValue {
+    some borrow: Value, referentValue: Value | {
+        isBorrow[borrow] or isBorrowMut[borrow]
+
+        some borrowCreation: Statement | {
+            valueCreated[borrowCreation, borrow]
+            variableHasValueAtStmt[borrowCreation, referent[borrow], referentValue]
+        }
+
+        not {
+            duringLifetime[borrow.value_lifetime.begin, referentValue]
+            duringLifetime[borrow.value_lifetime.end, referentValue]
+        }
+    }
+}
+
+pred modificationWhileBorrowed {
+    some modification: Statement, borrow: Value | {
+        isBorrow[borrow] or isBorrowMut[borrow]
+        variableModification[referent[borrow], modification]
+        duringLifetime[modification, borrow]
+    }
+}
+
 test suite for satisfiesBorrowChecking {
     test expect {
         // Vacuity check for borrow checking - is it even satisfiable
         borrowCheckVacuity: {
             validAndBorrowChecks
         } 
-        for 7 Statement
+        for 7 Statement, 5 Type
         is sat
 
         // Important to also check that it is possible to *fail* borrow checking for otherwise valid programs.
         borrowCheckFailVacuity: {
             validAndFailsBorrowCheck
         }
-        for 7 Statement
+        for 7 Statement, 5 Type
         is sat
 
         // Multiple borrows (&) of a given variable can exist at the same time.
@@ -51,8 +87,8 @@ test suite for satisfiesBorrowChecking {
                 lifetimesOverlap[borrow1, borrow2]
             }
         }
-        for 7 Statement
-        is sat
+        for 7 Statement, 5 Type
+        is sat 
 
         // It is invalid to have any other kind of borrow of some variable while there is a 
         // mutable borrow (&mut) to it that is alive.
@@ -65,9 +101,55 @@ test suite for satisfiesBorrowChecking {
                 lifetimesOverlap[borrowMut, otherBorrow]
             }
         }
-        for 7 Statement
-        is unsat 
+        for 7 Statement, 5 Type
+        is unsat
 
-        // TODO: Other property tests
+        // Without borrow checking, it is possible to use a variable after moving it
+        useAfterMovePossible: {
+            validAndFailsBorrowCheck
+            useAfterMove
+        }
+        for 7 Statement, 5 Type
+        is sat
+
+        // Borrow checking prevents using a variable that has been moved out of
+        useAfterMovePrevented: {
+            validAndBorrowChecks
+            useAfterMove
+        }
+        for 7 Statement, 5 Type
+        is unsat
+
+        // Without borrow checking, a borrow that outlives the value it references is possible
+        borrowOutlivesValuePossible: {
+            validAndFailsBorrowCheck
+            borrowOutlivesValue
+        }
+        for 7 Statement, 5 Type
+        is sat
+
+        // With borrow checking, a borrow cannot outlive its referent.
+        borrowOutlivesValuePrevented: {
+            validAndBorrowChecks
+            borrowOutlivesValue
+        }
+        for 7 Statement, 5 Type
+        is unsat
+
+        // Without borrow checking, you can mutate a variable while it is borrowed
+        mutateWhileBorrowedPossible: {
+            validAndFailsBorrowCheck
+            modificationWhileBorrowed
+        }
+        for 7 Statement, 5 Type
+        is sat
+
+        // Borrow checking prevents mutation while borrowed
+        mutateWhileBorrowedPrevented: {
+            validAndBorrowChecks
+            modificationWhileBorrowed
+        }
+        for 7 Statement, 5 Type
+        is unsat
     }
 }

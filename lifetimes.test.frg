@@ -8,7 +8,9 @@ test suite for lifetimesCorrect {
         lifetimesCorrectVacuity: {
             validProgramStructure
             lifetimesCorrect
-        } is sat
+        } 
+        for 7 Statement
+        is sat
 
         // The start of a lifetime must be before (or equal to) the end
         lifetimeStartBeforeEnd: {
@@ -18,7 +20,9 @@ test suite for lifetimesCorrect {
                     lifetime.begin = lifetime.end
                 }
             }
-        } is theorem
+        } 
+        for 7 Statement
+        is theorem
 
         // Every variable has at most one value at a given statement
         variablesHaveOneValueAtATime: {

@@ -10,12 +10,25 @@ sig Lifetime {
     end: one Statement
 }
 
+abstract sig Type {}
+
+sig OwnedType extends Type {}
+sig BorrowType extends Type {
+    borrow_referent_type: one Type
+}
+sig BorrowMutType extends Type {
+    borrow_mut_referent_type: one Type
+}
+
 one sig Mutable {}
 
 // A variable represents a 'place' where a value can be stored.
 sig Variable {
     // Whether this variable is being declared as mutable or not.
-    mutable: lone Mutable
+    mutable: lone Mutable,
+
+    // The type of values this variable can hold.
+    variable_type: one Type
 }
 
 // ============================== Values ==============================
@@ -144,6 +157,38 @@ pred isBetweenInclusive[middle: Statement, start: Statement, end: Statement] {
     isBetween[middle, start, end]
 }
 
+// Determines if a given value is an owned value.
+pred isOwned[value: Value] {
+    no value.borrow_referent
+    no value.borrow_mut_referent
+}
+
+// Determines if a given type is an owned type.
+pred isOwnedType[type: Type] {
+    no type.borrow_referent_type
+    no type.borrow_mut_referent_type
+}
+
+// Determines if a given value is a borrow (&).
+pred isBorrow[value: Value] {
+    some value.borrow_referent
+}
+
+// Determines if a given type is a borrow type.
+pred isBorrowType[type: Type] {
+    some type.borrow_referent_type
+}
+
+// Determines if a given value is a mutable borrow.
+pred isBorrowMut[value: Value] {
+    some value.borrow_mut_referent
+}
+
+// Determines if a given type is a borrow mut type.
+pred isBorrowMutType[type: Type] {
+    some type.borrow_mut_referent_type
+}
+
 
 // ============================== Program Structure ==============================
 
@@ -254,7 +299,6 @@ pred allObjectsParticipating {
             (s.initial_value = value) or (s.new_value = value)
         })
     }
-
     // Every set of braces that introduces a new scope must serve the purposes of limiting 
     // the scope of some variable declaration (the declaration appears inside the braces).
     // Any other use of braces does not impact the meaning of the program.
@@ -264,6 +308,16 @@ pred allObjectsParticipating {
             statementReachableOnlyNext[decl, curly.inner_scope] or decl = curly.inner_scope
         }
     }
+    // Every type can be reached from some variable type annotation. 
+    // No types just floating around.
+    all type: Type | {
+        some variable: Variable | {
+            reachable[type, variable.variable_type, borrow_referent_type, borrow_mut_referent_type] or 
+            type = variable.variable_type
+        }
+    }
+    // Do not allow moves from the same variable to itself, as they do nothing.
+    no move: MoveOrCopy | move.source = move.destination
 }
 
 // For every variable, there should be at most one InitializeVariable statement 
@@ -355,6 +409,75 @@ pred correctMoveValue {
     }
 }
 
+// Determines if the given types match at the outermost level, without checking equivalence of nested types.
+pred surfaceTypeMatches[t1: Type, t2: Type] {
+    (isOwnedType[t1] and isOwnedType[t2]) or
+    (isBorrowType[t1] and isBorrowType[t2]) or
+    (isBorrowMutType[t1] and isBorrowMutType[t2])
+}
+
+// Determines if the given types are equal.
+pred sameType[t1: Type, t2: Type] {
+    // At the outermost level, the types must match
+    surfaceTypeMatches[t1, t2]
+
+    // Construct a relation that represents reachability from an outer type to the types 
+    // nested inside it, by taking the transitive closure of the union of the referent fields.
+    let reachableNestedTypes = ^(borrow_referent_type + borrow_mut_referent_type) | {
+        // The nesting depth of both types is the same
+        // NOTE: This is necessary since we quantify over all nested types in t1 below and match
+        // them to types in t2, which could still be satisfied if t2 was a superset of t1.
+        #(t1.reachableNestedTypes) = #(t2.reachableNestedTypes)
+
+        // For every nested type within t1
+        all nestedType1: Type | (nestedType1 in t1.reachableNestedTypes) => {
+            // There is some corresponding nested type within t2, such that
+            some nestedType2: Type | {
+                nestedType2 in t2.reachableNestedTypes
+
+                // The nested types match on the surface (same kind of borrow, or both owned)
+                surfaceTypeMatches[nestedType1, nestedType2]
+
+                // The nesting depth is the same (they are at the same "position" in the type)
+                #(nestedType1.reachableNestedTypes) = #(nestedType2.reachableNestedTypes)
+            }
+        }
+    }
+}
+
+// Determines if the given value has the given type.
+pred valueHasType[value: Value, type: Type] {
+    // Owned values: Only need to match at the surface level
+    (isOwned[value] and isOwnedType[type]) or
+    // Borrows: The value should be a borrow and the variable it was constructed from 
+    // must have a type that matches the referent part of the given type.
+    {
+        isBorrow[value] 
+        isBorrowType[type] 
+        sameType[(value.borrow_referent).variable_type, type.borrow_referent_type]
+    } or
+    // Mutable borrows: Same as borrows
+    {
+        isBorrowMut[value] 
+        isBorrowMutType[type] 
+        sameType[(value.borrow_mut_referent).variable_type, type.borrow_mut_referent_type]
+    }
+}
+
+// Checks the program for type errors.
+pred passesTypeCheck {
+    // No cycles: No type can reach itself
+    no type: Type | reachable[type, type, borrow_referent_type, borrow_mut_referent_type]
+
+    // All initializations / updates / moves into a variable must use a value 
+    // that matches the annotated type of the variable.
+    all variable: Variable, value: Value, assignment: Statement | {
+        (assignsToVar[assignment, variable] and valueFromAssignment[assignment, value]) => {
+            valueHasType[value, variable.variable_type]
+        }
+    }
+}
+
 pred validProgramStructure {
     innerScopeValid
     sequentialStatements
@@ -364,6 +487,7 @@ pred validProgramStructure {
     allObjectsParticipating
     uniqueInitialization
     correctMoveValue
+    passesTypeCheck
 }
 
 // ============================== Lifetimes ==============================
@@ -603,10 +727,6 @@ pred cannotChangeBorrowedVariable {
     }
 }
 
-// Determines if a given value is a borrow (&).
-pred isBorrow[value: Value] {
-    some value.borrow_referent
-}
 
 // Once you move out of a variable, you cannot use it (it becomes uninitialized)
 // Note that with borrows (shared references), a copy is performed and 
@@ -668,7 +788,4 @@ run {
     validProgramStructure
     lifetimesCorrect
     satisfiesBorrowChecking
-
-    some value: Value, variable: Variable | value.borrow_referent = variable
-    some value: Value, variable: Variable | value.borrow_mut_referent = variable
-} for 7 Statement, 3 Variable, 5 Value
+} for 7 Statement, 5 Variable, 5 Value, 5 Type
