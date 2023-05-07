@@ -1,6 +1,16 @@
 const d3 = require("d3");
 d3.selectAll("svg > *").remove();
 
+const SHOW_LIFETIME_BOXES = true; // Whether to show the bounding boxes around lifetime regions
+const SHOW_LABELS = true; // Whether to show additional metadata about the instance, for debugging
+const LABELS_OFFSET = 50; // How much to the right of the program should the statement labels appear
+const BASE_OFFSET = 20; // How much to offset in the X/Y by default so that the program isn't partially cut off.
+const LINE_HEIGHT = 20; // The height of each line of text
+const INDENT_AMOUNT = 20; // Size of indentation
+const CENTERING_OFFSET = 5; // Offset for vertically centering the lifetime bounding boxes
+const NESTING_OFFSET = 10; // Distance (pixels) between edges of nested lifetime boxes
+const CHARACTER_WIDTH = 10; // Width of a character in pixels, roughly
+
 const program = instance.signature("Program").atoms()[0];
 const program_start_field = instance.field("program_start");
 const next_field = instance.field("next");
@@ -142,6 +152,7 @@ function convertToLines(starting_statement, lines, indent_level) {
   }
 }
 
+// Convert the given lines to a single string representing the entire program (with indentation).
 function convertLinesToString(lines) {
   let programAsString = "";
 
@@ -152,15 +163,6 @@ function convertLinesToString(lines) {
 
   return programAsString;
 }
-
-const SHOW_LABELS = true; // Whether to show additional metadata about the instance, for debugging
-const LABELS_OFFSET = 370; // How much to offset the labels horizontally from the left
-const BASE_OFFSET = 20; // How much to offset in the X/Y by default so that the program isn't partially cut off.
-const LINE_HEIGHT = 20; // The height of each line of text
-const INDENT_AMOUNT = 20; // Size of indentation
-const SHOW_LIFETIME_BOXES = true; // Whether to show the bounding boxes around lifetime regions
-const CENTERING_OFFSET = 5; // Offset for vertically centering the lifetime bounding boxes
-const BASE_BOX_WIDTH = 300; // Box width for lifetime boxes
 
 // Find where in the given list of ProgramLines the given statement occurs
 function indexOfStmtInLines(stmt, lines) {
@@ -174,6 +176,7 @@ function indexOfStmtInLines(stmt, lines) {
   return -1;
 }
 
+// Generate a random color, represented as a hex string.
 function randomColor() {
   // Credit to https://stackoverflow.com/questions/1267283/how-can-i-pad-a-value-with-leading-zeros
   // for padding with leading 0s.
@@ -185,6 +188,7 @@ function randomColor() {
   );
 }
 
+// Extract all the value objects from the given program.
 function valuesFromLines(lines) {
   let values = [];
 
@@ -208,10 +212,11 @@ function valuesFromLines(lines) {
   return values;
 }
 
-function visualizeLines(lines) {
+// Display the text of the given program as lines of Rust code
+function visualizeLines(lines, programWidth) {
   for (let i = 0; i < lines.length; i++) {
-    const x_offset = BASE_OFFSET + lines[i].indent_level * INDENT_AMOUNT;
-    const y_offset = BASE_OFFSET + i * LINE_HEIGHT;
+    const xOffset = BASE_OFFSET + lines[i].indent_level * INDENT_AMOUNT;
+    const yOffset = BASE_OFFSET + i * LINE_HEIGHT;
 
     let lineContent = lines[i].text;
     const statement = lines[i].statement;
@@ -222,8 +227,8 @@ function visualizeLines(lines) {
       .style("fill", "black")
       .style("font-family", "monospace")
       .style("font-size", "16")
-      .attr("x", x_offset)
-      .attr("y", y_offset)
+      .attr("x", xOffset)
+      .attr("y", yOffset)
       .text(lineContent);
 
     // Add annotations to the statement for debugging
@@ -246,8 +251,8 @@ function visualizeLines(lines) {
         .style("fill", "gray")
         .style("font-family", "monospace")
         .style("font-size", "16")
-        .attr("x", LABELS_OFFSET)
-        .attr("y", y_offset)
+        .attr("x", BASE_OFFSET + programWidth + LABELS_OFFSET)
+        .attr("y", yOffset)
         .text(label);
     }
   }
@@ -282,7 +287,8 @@ function valueNestedness(lifetimeBegin, lifetimeEnd, values, lines) {
   return nestedness;
 }
 
-function visualizeLifetimes(lines) {
+// Display the lifetimes in the given program with colored bounding boxes.
+function visualizeLifetimes(lines, programWidth) {
   const values = valuesFromLines(lines);
 
   // Display what the lifetime is for each value in the instance,
@@ -300,24 +306,17 @@ function visualizeLifetimes(lines) {
 
     const valueColor = randomColor();
 
-    console.log(
-      values[i] +
-        " nestedness: " +
-        valueNestedness(beginStmt, endStmt, values, lines)
-    );
-
     if (SHOW_LIFETIME_BOXES) {
       // Draw a box around the lifetime region
-      // NOTE: There is a small noise added to the box width, so that you
-      // can more easily see which boxes contain others.
       d3.select(svg)
         .append("rect")
         .attr("x", BASE_OFFSET)
         .attr("y", CENTERING_OFFSET + beginOffset)
         .attr(
           "width",
-          BASE_BOX_WIDTH -
-            valueNestedness(beginStmt, endStmt, values, lines) * 5
+          programWidth +
+            LABELS_OFFSET -
+            valueNestedness(beginStmt, endStmt, values, lines) * NESTING_OFFSET
         )
         .attr("height", endOffset - beginOffset + LINE_HEIGHT)
         .attr("fill-opacity", 0.2)
@@ -340,13 +339,31 @@ function visualizeLifetimes(lines) {
   }
 }
 
+// Find the maximum width in pixels of any line in the given program.
+function findMaxLineWidth(lines) {
+  let maxWidth = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const width =
+      lines[i].indent_level * INDENT_AMOUNT +
+      lines[i].text.length * CHARACTER_WIDTH;
+
+    if (maxWidth == null || width > maxWidth) {
+      maxWidth = width;
+    }
+  }
+
+  return maxWidth;
+}
+
 let lines = [];
 convertToLines(first_statement, lines, 0);
 
 // NOTE: Visualize the lifetime boxes *first*, then the program text on top of it,
 // so that the text is more readable and doesn't get covered by the box colors.
-visualizeLifetimes(lines);
-visualizeLines(lines);
+const programWidth = findMaxLineWidth(lines);
+visualizeLifetimes(lines, programWidth);
+visualizeLines(lines, programWidth);
 
 const programAsString = convertLinesToString(lines);
 

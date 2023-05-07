@@ -1,10 +1,10 @@
 # To do
 
-- [ ] Visualization updates
+- [x] Visualization updates
 
   - [x] Visualize types on declarations
 
-  - [ ] Visualize lifetimes
+  - [x] Visualize lifetimes
 
     - [x] Use some kind of bounding box around the relevant statements, color-coded by value?
     - [x] Visualize the bounding boxes first, then the text ON TOP of it, so that
@@ -13,7 +13,7 @@
     - [x] Vary the width of the boxes so that overlap is easier to see
           Ideally, this would depend on how "nested" a lifetime is within other lifetimes
 
-    - [ ] Actually calculate what the max width of the program text is, so we can
+    - [x] Actually calculate what the max width of the program text is, so we can
           choose a base width for the bounding boxes appropriately (and also an
           offset for the statement labels)
 
