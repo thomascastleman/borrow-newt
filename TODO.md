@@ -14,6 +14,14 @@
   - E.g. adding `mut` to a variable that isn't mutated
   - Curly braces that don't have a `next`
 
+# Efficiency
+
+## Valid + Borrow Checks
+
+8 Statement, 5 Variable, 5 Value, 5 Type: 8 min translation, 311ms solving
+
+9 Statement, 5 Variable, 5 Value, 5 Type: 23 min translation, 2 seconds solving
+
 # Bugs
 
 # Questions

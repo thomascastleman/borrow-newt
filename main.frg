@@ -787,7 +787,5 @@ pred satisfiesBorrowChecking {
 run {
     validProgramStructure
     lifetimesCorrect
-    not satisfiesBorrowChecking
-
-    some v: Value | some v.borrow_mut_referent
-} for 7 Statement, 5 Variable, 5 Value, 5 Type
+    satisfiesBorrowChecking
+} for 9 Statement, 5 Variable, 5 Value, 5 Type
