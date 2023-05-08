@@ -124,7 +124,7 @@ function convertToLines(starting_statement, lines, indent_level) {
         const dst = variableToString(curr_statement.join(destination_field));
         text = dst + " = " + src + ";";
       } else {
-        text = "move_to_func(" + src + ");";
+        text = "drop(" + src + ");";
       }
 
       lines.push(new ProgramLine(text, indent_level, curr_statement));

@@ -1,26 +1,5 @@
 # To do
 
-- [x] Visualization updates
-
-  - [x] Visualize types on declarations
-
-  - [x] Visualize lifetimes
-
-    - [x] Use some kind of bounding box around the relevant statements, color-coded by value?
-    - [x] Visualize the bounding boxes first, then the text ON TOP of it, so that
-          you can see the text better
-
-    - [x] Vary the width of the boxes so that overlap is easier to see
-          Ideally, this would depend on how "nested" a lifetime is within other lifetimes
-
-    - [x] Actually calculate what the max width of the program text is, so we can
-          choose a base width for the bounding boxes appropriately (and also an
-          offset for the statement labels)
-
-  - [x] Changes to visualization so that programs can be pasted and run
-
-    - Don't use Value0, etc, for owned, use Box or other type
-
 - [ ] Testing
 
   - [ ] Property tests for lifetimes
