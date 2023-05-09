@@ -52,7 +52,7 @@ abstract sig Statement {
     // appearing at the end of scopes will have no `next`.
     next: lone Statement,
     
-    // Only used for DeclareVariable and Scope statements
+    // Only used for DeclareVariable and CurlyBraces statements
     inner_scope: lone Statement
 }
 
@@ -139,6 +139,13 @@ pred isBeforeOrEqual[earlier: Statement, later: Statement] {
     earlier = later
 }
 
+// A variant of isBefore that enforces that the earlier statement be immediately 
+// before the later statement, i.e. there are no intervening statements.
+pred isDirectlyBefore[earlier: Statement, later: Statement] {
+    isBefore[earlier, later]
+    no middle: Statement | isBetween[middle, earlier, later]
+}
+
 // Determines if a given statement is between a start and end statement, exclusive.
 pred isBetween[middle: Statement, start: Statement, end: Statement] {
     // The middle is not at the endpoints (this is exclusive)
@@ -213,13 +220,8 @@ pred variableModification[variable: Variable, statement: Statement] {
     statement.destination = variable            // Being moved into
 }
 
-// Determines if the given variable is being "used" in the given statement.
-// NOTE: Excludes declaration and initialization, because if initializing 
-// is considered use, and use before initialization is illegal, then 
-// you can never initialize.
-pred variableUse[variable: Variable, statement: Statement] {
-    variableModification[variable, statement] or
-
+// Determines if the statement creates a value that references the given variable.
+pred variableUseInValue[variable: Variable, statement: Statement] {
     // Account for uses of variables that are embedded in values, e.g. &mut a
     (some value: Value | {
         // This value is part of this statement
@@ -230,9 +232,24 @@ pred variableUse[variable: Variable, statement: Statement] {
     })
 }
 
+// Determines if the given variable is being "used" in the given statement.
+// NOTE: Excludes declaration and initialization, because if initializing 
+// is considered use, and use before initialization is illegal, then 
+// you can never initialize.
+pred variableUse[variable: Variable, statement: Statement] {
+    variableModification[variable, statement] or
+    variableUseInValue[variable, statement]
+}
+
 // Version of variableUse that includes initialization statements as uses.
 pred variableUseOrInit[variable: Variable, statement: Statement] {
     variableUse[variable, statement] or statement.initialized_variable = variable
+}
+
+// Determines if the statement creates a borrow of the variable or moves out of it.
+pred readUseOfVariable[variable: Variable, statement: Statement] {
+    variableUseInValue[variable, statement] or 
+    statement.source = variable
 }
 
 // Checks that variable use is preceded by initialization and declaration.
@@ -243,7 +260,7 @@ pred variableDeclThenInitThenUsed {
             init.initialized_variable = v   // v is initialized
 
             // The initialization is in the scope of this variable.
-            // NOTE: This is necessary in addition to the above constraint, 
+            // NOTE: This is necessary in addition to the below constraint, 
             // because initializations are not considered uses.
             statementReachable[init, decl]
 
@@ -252,8 +269,6 @@ pred variableDeclThenInitThenUsed {
                 isBetween[init, decl, use]
 
                 // All uses of the variable are within the scope of that variable
-                // NOTE: We use NoExit here, because we do not want to exit scopes 
-                // when finding a path from declaration to use.
                 statementReachable[use, decl]
             }
         }
@@ -288,8 +303,16 @@ pred allObjectsParticipating {
     // All variables in the instance are declared in the program exactly once.
     // This eliminates variables that do not participate in the program, and 
     // ensures that the same variable isn't declared more than once.
+    // Also, do not pointlessly mark variables as mutable if they don't need to be.
     all variable: Variable | {
         one decl: DeclareVariable | decl.declared_variable = variable
+
+        some variable.mutable => {
+            (some mutation: Statement | {
+                mutation.updated_variable = variable or mutation.destination = variable
+            }) or 
+            (some borrowMut: BorrowMut | borrowMut.borrow_mut_referent = variable)
+        }
     }
     // All values are used in some statement. This eliminates values that 
     // aren't actually part of the program.
@@ -304,6 +327,7 @@ pred allObjectsParticipating {
     // Any other use of braces does not impact the meaning of the program.
     all curly: CurlyBraces | {
         some curly.inner_scope
+        some curly.next
         some decl: DeclareVariable | {
             statementReachableOnlyNext[decl, curly.inner_scope] or decl = curly.inner_scope
         }
@@ -367,9 +391,21 @@ pred valueFromAssignment[assignment: Statement, value: Value] {
     value = assignment.moved_value
 }
 
+// Determine if the given statement is within the scope of the variable.
+pred inScopeOfVariable[statement: Statement, variable: Variable] {
+    some decl: DeclareVariable | {
+        decl.declared_variable = variable
+        statementReachableInclusive[statement, decl.inner_scope]
+    }
+}
+
 // Determines if the given variable holds the given value right before the 
 // execution of the given statement (not including effects of the statement itself).
 pred variableHasValueBeforeStmt[statement: Statement, variable: Variable, value: Value] {
+    // In order for the variable to have a value at all, it must be in scope
+    inScopeOfVariable[statement, variable]
+
+    // Look at the most recent assignment to determine the value
     some assignment: Statement | {
         assignsToVar[assignment, variable]
 
@@ -381,6 +417,13 @@ pred variableHasValueBeforeStmt[statement: Statement, variable: Variable, value:
             assignsToVar[moreRecentAssignment, variable]
             isBetween[moreRecentAssignment, assignment, statement]
         }
+        // The variable hasn't been moved out of since this assignment, because 
+        // that would leave it uninitialized.
+        (!isBorrow[value]) => (no moveOut: MoveOrCopy | {
+            moveOut.source = variable
+            moveOut.moved_value = value
+            isBetween[moveOut, assignment, statement]
+        })
 
         // The value comes from this most recent assignment
         valueFromAssignment[assignment, value]
@@ -569,29 +612,45 @@ pred ownedEndOfLifetime[owned: Owned, end: Statement] {
     some lastHoldingVar: Variable | {
         lastVariable[lastHoldingVar, owned]
 
-        let stmtAfterEnd = (some end.next => end.next else end.inner_scope) | {
-            // Case 1) The end statement is a destinationless move of the last holding variable of the value
-            (end.source = lastHoldingVar and no end.destination) or
+        // Case 1) The end statement is a destinationless move of the last holding variable of the value
+        {
+            end.source = lastHoldingVar 
+            no end.destination
+            variableHasValueBeforeStmt[end, lastHoldingVar, owned]
+        } or
 
-            // Case 2) The end statement is the last statement before the last holding variable is overwritten to a different value
-            (some stmtAfterEnd and stmtAfterEnd.updated_variable = lastHoldingVar) or
+        // Case 2) The end statement is the last statement before the last holding variable 
+        // is overwritten to a different value, either by an update or a move into the variable.
+        {
+            // There is a statement following the end of lifetime
+            some stmtAfterEnd: Statement | {
+                isDirectlyBefore[end, stmtAfterEnd]
 
-            // Case 3) The end statement is the last statement before the last holding variable goes out of scope
-            {
-                // The end is indeed a statement at the end of a scope
-                no stmtAfterEnd
+                // It modifies the last holding variable for this value
+                (stmtAfterEnd.updated_variable = lastHoldingVar or
+                (stmtAfterEnd.destination = lastHoldingVar and stmtAfterEnd.moved_value != owned))
 
-                some decl: DeclareVariable | {
-                    // The end is within the scope of the last holding variable
-                    decl.declared_variable = lastHoldingVar
-                    statementReachable[end, decl.inner_scope]
+                // It does so while the last holding variable was actually holding this value
+                variableHasValueBeforeStmt[stmtAfterEnd, lastHoldingVar, owned]
+            }
+        } or
 
-                    // It is the last statement in that scope.
-                    // (All other statements in that scope are *before* the end)
-                    all stmtInSameScope: Statement | {
-                        (statementReachableInclusive[stmtInSameScope, decl.inner_scope] and stmtInSameScope != end) => {
-                            isBefore[stmtInSameScope, end]
-                        }
+        // Case 3) The end statement is the last statement before the last holding variable goes out of scope
+        {
+            // The end is indeed a statement at the end of a scope
+            no end.next
+            no end.inner_scope
+
+            some decl: DeclareVariable | {
+                // The end is within the scope of the last holding variable
+                decl.declared_variable = lastHoldingVar
+                statementReachable[end, decl.inner_scope]
+
+                // It is the last statement in that scope.
+                // (All other statements in that scope are *before* the end)
+                all stmtInSameScope: Statement | {
+                    (statementReachableInclusive[stmtInSameScope, decl.inner_scope] and stmtInSameScope != end) => {
+                        isBefore[stmtInSameScope, end]
                     }
                 }
             }
@@ -668,9 +727,11 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
 // that the lifetimes are correct so that they may be used in analysis.
 pred lifetimesCorrect {
     // Each kind of value has the corresponding kind of lifetime
-    all borrow: Borrow | borrowLifetime[borrow]
-    all borrowMut: BorrowMut | borrowMutLifetime[borrowMut]
-    all owned: Owned | ownedLifetime[owned]
+    all value: Value | {
+        isBorrow[value] => borrowLifetime[value]
+        isBorrowMut[value] => borrowMutLifetime[value]
+        isOwned[value] => ownedLifetime[value]
+    }
 }
 
 
@@ -728,7 +789,8 @@ pred cannotChangeBorrowedVariable {
 }
 
 
-// Once you move out of a variable, you cannot use it (it becomes uninitialized)
+// Once you move out of a variable, you cannot use it (it becomes uninitialized),
+// until it is reinitialized (if it is).
 // Note that with borrows (shared references), a copy is performed and 
 // the variable can still be used afterwards
 // E.g.
@@ -740,12 +802,11 @@ pred cannotChangeBorrowedVariable {
 // Variable2 = &mut Variable1;
 // Variable3 = Variable2;
 // // Now, Variable2 cannot be used (was moved out of)
-pred cannotUseAfterMove {
-    // For every move that moves a value other than a borrow (i.e., a value with move semantics)
-    all move: MoveOrCopy | (!isBorrow[move.moved_value] and move.source != move.destination) => {
-        // All subsequent statements do not use the variable that was moved out of
-        all laterStatement: Statement | isBefore[move, laterStatement] => {
-            not variableUse[move.source, laterStatement]
+pred cannotUseWhileUninitialized {
+    // All reads of variables occur only while the variable is in an initialized state
+    all readOfVar: Statement, variable: Variable | {
+        readUseOfVariable[variable, readOfVar] => {
+            some value: Value | variableHasValueAtStmt[readOfVar, variable, value]
         }
     }
 }
@@ -780,12 +841,45 @@ pred borrowAliveDuringValueLifetime {
 pred satisfiesBorrowChecking {
     borrowMutsAreUnique
     cannotChangeBorrowedVariable
-    cannotUseAfterMove
+    cannotUseWhileUninitialized
     borrowAliveDuringValueLifetime
+}
+
+inst optimizer_9statement {
+    Program = `Program0
+    Statement in `Statement0 + `Statement1 + `Statement2 + `Statement3 +
+                 `Statement4 + `Statement5 + `Statement6 + `Statement7 + 
+                 `Statement8
+    -- Manually break the symmetry on which statement is first; if there is one,
+    -- it is always `Statement0.
+    program_start in `Program0 -> `Statement0 
+    -- Manually break the symmetry on which statement follows another. 
+    --   (I don't think it would be safe to have just a linear order as the
+    --    upper bound? So this just forces the "next" statement to be later 
+    --    in our enumeration.)
+    next in `Statement0->(`Statement1 + `Statement2 + `Statement3 + `Statement4 + `Statement5 + `Statement6 + `Statement7 + `Statement8) +
+            `Statement1->(`Statement2 + `Statement3 + `Statement4 + `Statement5 + `Statement6 + `Statement7 + `Statement8)+
+            `Statement2->(`Statement3 + `Statement4 + `Statement5 + `Statement6 + `Statement7 + `Statement8)+
+            `Statement3->(`Statement4 + `Statement5 + `Statement6 + `Statement7 + `Statement8)+
+            `Statement4->(`Statement5 + `Statement6 + `Statement7 + `Statement8)+
+            `Statement5->(`Statement6 + `Statement7 + `Statement8)+
+            `Statement6->(`Statement7 + `Statement8)+
+            `Statement7->`Statement8 + 
+            `Statement8->none
+    inner_scope in `Statement0->(`Statement1 + `Statement2 + `Statement3 + `Statement4 + `Statement5 + `Statement6 + `Statement7 + `Statement8) +
+            `Statement1->(`Statement2 + `Statement3 + `Statement4 + `Statement5 + `Statement6 + `Statement7 + `Statement8)+
+            `Statement2->(`Statement3 + `Statement4 + `Statement5 + `Statement6 + `Statement7 + `Statement8)+
+            `Statement3->(`Statement4 + `Statement5 + `Statement6 + `Statement7 + `Statement8)+
+            `Statement4->(`Statement5 + `Statement6 + `Statement7 + `Statement8)+
+            `Statement5->(`Statement6 + `Statement7 + `Statement8)+
+            `Statement6->(`Statement7 + `Statement8)+
+            `Statement7->`Statement8 + 
+            `Statement8->none
 }
 
 run {
     validProgramStructure
     lifetimesCorrect
-    satisfiesBorrowChecking
-} for 9 Statement, 5 Variable, 5 Value, 5 Type
+    not satisfiesBorrowChecking
+} for exactly 9 Statement, exactly 3 Variable, exactly 3 Value, 5 Type, 5 Int
+for optimizer_9statement
