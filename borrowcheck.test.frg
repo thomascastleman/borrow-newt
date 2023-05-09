@@ -23,16 +23,12 @@ pred sameReferent[borrow1: Value, borrow2: Value] {
     }
 }
 
-// FIXME: This is too restrictive - should be testing that you can't read something while uninit
-pred useAfterMove { 
-    some variable: Variable, moveOutOf: MoveOrCopy, use: Statement | {
-        moveOutOf.source = variable
-        moveOutOf.destination != variable
-        not isBorrow[moveOutOf.moved_value]
-
-        variableUse[variable, use]
-
-        isBefore[moveOutOf, use]
+pred useWhileUninit {
+    some statement: Statement, variable: Variable | {
+        // The statement reads the variable
+        readUseOfVariable[variable, statement]
+        // The variable has no value at this statement
+        no value: Value | variableHasValueAtStmt[statement, variable, value]
     }
 }
 
@@ -106,17 +102,17 @@ test suite for satisfiesBorrowChecking {
         is unsat
 
         // Without borrow checking, it is possible to use a variable after moving it
-        useAfterMovePossible: {
+        useWhileUninitPossible: {
             validAndFailsBorrowCheck
-            useAfterMove
+            useWhileUninit 
         }
         for 7 Statement, 5 Type
         is sat
 
         // Borrow checking prevents using a variable that has been moved out of
-        useAfterMovePrevented: {
+        useWhileUninitPrevented: {
             validAndBorrowChecks
-            useAfterMove
+            useWhileUninit
         }
         for 7 Statement, 5 Type
         is unsat
@@ -153,7 +149,7 @@ test suite for satisfiesBorrowChecking {
         for 7 Statement, 5 Type
         is unsat
 
-        use of value after end of lifetime is unsat
+        // Use of value after end of lifetime is unsat
         useOfValAfterEndOfLife: {
             validAndBorrowChecks
             some endStatement: Statement, value: Value, lastVar: Variable | {
