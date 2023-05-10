@@ -581,8 +581,6 @@ pred validProgramStructure {
 
 // ============================== Lifetimes ==============================
 
-
-
 // Determines if this statement is the last usage of the given variable, while 
 // it is holding the given value. I.e., if there are later uses of the variable,
 // they occur while it is holding different values.
@@ -758,27 +756,17 @@ pred borrowEndOfLifetime[borrow: Value] {
     }
 }
 
-// TODO: If this and the below predicate are indeed exactly the same, probably make them one predicate
-// For borrows, the lifetime extends from the point of creation until last use.
-pred borrowLifetime[borrow: Borrow] {
+// Constrain the lifetime begin and end for a borrow value.
+pred borrowLifetime[borrow: Value] {
     // The start of lifetime is the point of creation
     valueCreated[borrow.value_lifetime.begin, borrow]
 
+    // The end of lifetime is the last use of any value through which the borrow 
+    // is reachable by a chain of nested borrows.
     borrowEndOfLifetime[borrow]
 
     // The beginning of the lifetime cannot be after the end
     isBeforeOrEqual[borrow.value_lifetime.begin, borrow.value_lifetime.end]
-}
-
-// For mutable borrows, the lifetime extends from the point of creation until last use.
-pred borrowMutLifetime[borrowMut: BorrowMut] {
-    // The start of lifetime is the point of creation
-    valueCreated[borrowMut.value_lifetime.begin, borrowMut]
-
-    borrowEndOfLifetime[borrowMut]
-
-    // The beginning of the lifetime cannot be after the end
-    isBeforeOrEqual[borrowMut.value_lifetime.begin, borrowMut.value_lifetime.end]
 }
 
 // Enforces that all lifetimes have been determined following the rules.
@@ -787,8 +775,7 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
 pred lifetimesCorrect {
     // Each kind of value has the corresponding kind of lifetime
     all value: Value | {
-        isBorrow[value] => borrowLifetime[value]
-        isBorrowMut[value] => borrowMutLifetime[value]
+        (isBorrow[value] or isBorrowMut[value]) => borrowLifetime[value]
         isOwned[value] => ownedLifetime[value]
     }
 }
@@ -936,10 +923,10 @@ run {
     lifetimesCorrect
     // satisfiesBorrowChecking
 
-    some borrow: Value | some borrow.borrow_mut_referent
-    // some borrow: Borrow | some borrow.borrow_referent_value.borrow_referent_value
+    // Look for a triple borrow
+    some borrow: Borrow | {
+        some borrow.borrow_referent_value.borrow_referent_value.borrow_referent_value
+    }
 } 
-// for exactly 9 Statement, exactly 3 Variable, exactly 3 Value, 5 Type, 5 Int
-// for exactly 6 Statement, exactly 3 Variable, exactly 3 Value, 5 Int
-for exactly 6 Statement, exactly 3 Value, exactly 3 Variable, 5 Int
+for exactly 8 Statement, exactly 4 Variable, exactly 4 Value, 5 Type, 5 Int
 for optimizer_9statement

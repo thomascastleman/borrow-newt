@@ -2,9 +2,9 @@
 
 - [ ] Optimizations for efficiency
 
-  - [ ] Try adding the new fields to the partial instance
-
 - [ ] Splitting everything into multiple .frg files based on the comments dividing functionality
+
+- [ ] Try very large instances (20 Statement, etc)
 
 - [ ] More constraints to eliminate insignificant differences between instances, so that
       each instance really represents a different program.
@@ -13,11 +13,14 @@
   - [x] Curly braces that don't have a `next`
 
 - [ ] Testing
+
   - [ ] More tests for program structure now with the new fields (Thomas)
+
+- [ ] Visualization: Try removing indentation + explicit braces from scope of `let` statements
 
 # Efficiency
 
-## Valid + Borrow Checks
+## (**OLD**) Valid + Borrow Checks
 
 exactly 7 Statement, exactly 3 Variable, exactly 3 Value, 5 Type: 43 seconds translation, 5 seconds solving
 
@@ -29,30 +32,13 @@ exactly 8 Statement, exactly 3 Variable, exactly 3 Value, 5 Type, 5 Int: 40 seco
 
 - With Tim's optimizer, down to 15 min translation, 560ms solving
 
+## Valid **with new end of lifetime constraints**
+
+exactly 7 Statement, exactly 3 Variable, exactly 3 Value, 5 Type: 3.5 min translation, 5 seconds solving
+
+exactly 8 Statement, exactly 3 Variable, exactly 3 Value, 5 Type: 3.5 min translation, 12 seconds solving
+
 # Bugs
-
-- [ ] Are we calculating end of lifetime for &mut and & correctly in the case of
-      nested borrows? See example program below, which happens to work but only
-      because the end of lifetime statement is a move
-
-  ```
-  let v0: &mut &mut Box<i32>;
-  {
-    let mut v1: &mut Box<i32>;
-    {
-      {
-        let mut v2: Box<i32>;
-        {
-          v2 = Box::new(0);
-          v1 = &mut v2;         // <-- Value1 start lifetime
-          drop(v2);
-        }
-      }
-      v0 = &mut v1;
-      drop(v0);                 // <-- Value1 end lifetime
-    }
-  }
-  ```
 
 # Questions
 

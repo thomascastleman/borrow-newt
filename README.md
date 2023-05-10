@@ -23,6 +23,10 @@ Our representation relies heavily on the sigs we defined to represent different 
   - Discuss how we model only a subset of the kinds of operations you can do in Rust
   - Limitations around efficiency and number of statements
 
+To limit the scope of the project, we chose to only model a small subset of Rust. The
+types of statements represented in our model are variable declarations, assignment
+(to a new value or to another variable's value), and explicit scopes created by braces.
+
 ## Goals
 
 - Did your goals change at all from your proposal? Did you realize anything you planned was unrealistic, or that anything you thought was unrealistic was doable?
