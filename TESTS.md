@@ -7,8 +7,6 @@
 - value held by some variable after end of lifetime is unsat
 - owned value held by variable after its lifetime is unsat
 
-# TODO Lifetime Tests
-
 - [ ] some test to make sure the lifetimes are constrained to be as small as possible for borrows
 - [ ] check that lifetimes are not too small, make sure it counts when a value is passed from one variable to another
 
@@ -22,5 +20,3 @@
 - borrow that outlives the value is possible without borrow checking and prevented with borrow checking
 - can mutable a variable while it is borrowed without borrow checking, prevented with borrow checking
 - use of value after the end of its lifetime is unsat
-
-# TODO Borrow Check Tests

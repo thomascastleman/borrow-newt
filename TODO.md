@@ -2,12 +2,18 @@
 
 - [ ] Optimizations for efficiency
 
+  - [ ] Try adding the new fields to the partial instance
+
 - [ ] Splitting everything into multiple .frg files based on the comments dividing functionality
 
 - [ ] More constraints to eliminate insignificant differences between instances, so that
       each instance really represents a different program.
+
   - [x] E.g. adding `mut` to a variable that isn't mutated
   - [x] Curly braces that don't have a `next`
+
+- [ ] Testing
+  - [ ] More tests for program structure now with the new fields (Thomas)
 
 # Efficiency
 

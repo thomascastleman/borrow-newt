@@ -720,33 +720,53 @@ pred ownedLifetime[owned: Owned] {
     isBeforeOrEqual[owned.value_lifetime.begin, owned.value_lifetime.end]
 }
 
+// Determine if the given outer borrow contains the borrow nested within it, and 
+// the given statement is the last use of the outer borrow
+pred outerBorrowUse[borrow: Value, outerBorrow: Value, useOfOuterBorrow: Statement] {
+    some outerBorrowHoldingVar: Variable | {
+        // The borrow is reachable from the outer borrow
+        borrowReachable[borrow, outerBorrow] or outerBorrow = borrow 
+
+        // This statement is some use of a holding variable of the outer borrow 
+        variableUseOrInit[outerBorrowHoldingVar, useOfOuterBorrow]
+        variableHasValueAtStmt[useOfOuterBorrow, outerBorrowHoldingVar, outerBorrow]
+
+        // The use needs to be in the scope of the variable from which the outer borrow was created
+        inScopeOfVariable[useOfOuterBorrow, referent[outerBorrow]]
+    }
+}
+
+// Constrain the end of lifetime for a given borrow (either & or &mut).
+// The end of lifetime of a borrow should be the last use of any value 
+// from which this borrow is reachable by following a chain of borrows.
+// E.g. &a can be reached through &mut &a and &&mut &a.
+pred borrowEndOfLifetime[borrow: Value] {
+    some outerBorrow: Value, lastUseOfOuterBorrow: Statement | {
+        // This statement is a last use of an outer borrow for this borrow
+        outerBorrowUse[borrow, outerBorrow, lastUseOfOuterBorrow]
+        
+        // This is the absolute last possible candidate for the end of lifetime
+        // NOTE: otherOuterBorrow could equal outerBorrow here, this constraint just ensures
+        // that the use of the outer borrow we're looking at is the last possible one.
+        no otherOuterBorrow: Value, otherUse: Statement | {
+            outerBorrowUse[borrow, otherOuterBorrow, otherUse]
+            isBefore[lastUseOfOuterBorrow, otherUse]
+        }
+
+        // The lifetime ends at this use
+        borrow.value_lifetime.end = lastUseOfOuterBorrow
+    }
+}
+
+// TODO: If this and the below predicate are indeed exactly the same, probably make them one predicate
 // For borrows, the lifetime extends from the point of creation until last use.
 pred borrowLifetime[borrow: Borrow] {
     // The start of lifetime is the point of creation
     valueCreated[borrow.value_lifetime.begin, borrow]
 
-    // FIXME: Same issue as borrowMut: end of lifetime
+    borrowEndOfLifetime[borrow]
 
-    // Look for statement that is the _latest_ (as in, most late) use of _any_ 
-    // variable that is reachable via move from the initial variable for the borrow
-    some holdingVar: Variable | {
-        // This use is the last use of some holding variable for the borrow
-        holdingVariable[holdingVar, borrow]
-        lastUseOfVarWithValue[borrow.value_lifetime.end, holdingVar, borrow]
-
-        // All other last uses of holding variables happen before this one
-        all otherHoldingVar: Variable, otherUse: Statement | {
-            {
-                holdingVariable[otherHoldingVar, borrow] 
-                lastUseOfVarWithValue[otherUse, otherHoldingVar, borrow]
-                otherHoldingVar != holdingVar
-            } => {
-                isBefore[otherUse, borrow.value_lifetime.end]
-            }
-        }
-    }
-
-    //The beginning of the lifetime cannot be after the end
+    // The beginning of the lifetime cannot be after the end
     isBeforeOrEqual[borrow.value_lifetime.begin, borrow.value_lifetime.end]
 }
 
@@ -755,26 +775,9 @@ pred borrowMutLifetime[borrowMut: BorrowMut] {
     // The start of lifetime is the point of creation
     valueCreated[borrowMut.value_lifetime.begin, borrowMut]
 
-    // FIXME: The end of lifetime of a borrow should be the last use of any value 
-    // from which this borrow is reachable by following a chain of borrows.
-    // The lifetime end can't be extended arbitrarily though
-    // E.g. &a can be reached through &mut &a and &&mut &a.
-    // - Potential implementation: Add a field on Value that relates borrows to the *value* 
-    //   being borrowed, and use `reachable` to determine reachability
+    borrowEndOfLifetime[borrowMut]
 
-    // If a usage of variable v2 is going to be the end of lifetime for a borrow v1:
-    //      - The value of the inner borrow must be reachable via the borrow chain from 
-    //        the value of v2 at this usage  
-    //      - The usage must be in the scope of the variable from which the outer borrow
-    //        was constructed (i.e. the borrow_referent field of the outer borrow)
-
-    // The end is the last use of the last variable this value is moved to
-    some lastVar: Variable | {
-        lastVariable[lastVar, borrowMut]
-        lastUseOfVarWithValue[borrowMut.value_lifetime.end, lastVar, borrowMut]
-    }
-
-    //The beginning of the lifetime cannot be after the end
+    // The beginning of the lifetime cannot be after the end
     isBeforeOrEqual[borrowMut.value_lifetime.begin, borrowMut.value_lifetime.end]
 }
 
@@ -930,11 +933,13 @@ inst optimizer_9statement {
 
 run {
     validProgramStructure
-    // lifetimesCorrect
+    lifetimesCorrect
     // satisfiesBorrowChecking
 
-    some borrow: Borrow | some borrow.borrow_referent_value.borrow_referent_value
+    some borrow: Value | some borrow.borrow_mut_referent
+    // some borrow: Borrow | some borrow.borrow_referent_value.borrow_referent_value
 } 
 // for exactly 9 Statement, exactly 3 Variable, exactly 3 Value, 5 Type, 5 Int
-for exactly 6 Statement, 5 Int
+// for exactly 6 Statement, exactly 3 Variable, exactly 3 Value, 5 Int
+for exactly 6 Statement, exactly 3 Value, exactly 3 Variable, 5 Int
 for optimizer_9statement
