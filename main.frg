@@ -198,6 +198,15 @@ pred isBorrowMutType[type: Type] {
     some type.borrow_mut_referent_type
 }
 
+// Extract the referent variable of a given value, or none if the value is an Owned.
+fun referent(borrow: Value): Variable {
+    some borrow.borrow_referent => borrow.borrow_referent else borrow.borrow_mut_referent
+}
+
+// Extract the referent value from a given borrow (or none, if Owned)
+fun referentValue(value: Value): Value {
+    some value.borrow_referent_value => value.borrow_referent_value else value.borrow_mut_referent_value
+}
 
 // ============================== Program Structure ==============================
 
@@ -533,27 +542,19 @@ pred passesTypeCheck {
 // Ensures that the chain of values connected by the `borrow_referent_value` and 
 // `borrow_mut_referent_value` fields is properly constrained.
 pred validBorrowChain {
-    all borrow: Borrow | {
-        some pointOfCreation: Statement | {
-            valueCreated[pointOfCreation, borrow]
-
-            (some referentValue: Value | variableHasValueAtStmt[pointOfCreation, borrow.borrow_referent, referentValue]) => {
-                some borrow.borrow_referent_value
-                variableHasValueAtStmt[pointOfCreation, borrow.borrow_referent, borrow.borrow_referent_value]
-            } else {
-                no borrow.borrow_referent_value
-            }
-        }
-    }
-    all borrowMut: BorrowMut | {
-        some pointOfCreation: Statement | {
-            valueCreated[pointOfCreation, borrowMut]
-
-            (some referentValue: Value | variableHasValueAtStmt[pointOfCreation, borrowMut.borrow_mut_referent, referentValue]) => {
-                some borrowMut.borrow_mut_referent_value
-                variableHasValueAtStmt[pointOfCreation, borrowMut.borrow_mut_referent, borrowMut.borrow_mut_referent_value]
-            } else {
-                no borrowMut.borrow_mut_referent_value
+    // For all borrows, consider the statement that creates the borrow
+    all borrow: Value, pointOfCreation: Statement | (!isOwned[borrow] and valueCreated[pointOfCreation, borrow]) => {
+        let ref = referent[borrow] | {
+            let refValue = referentValue[borrow] | {
+                // If the referent variable of this borrow has some value at the point when the
+                // borrow is constructed, the borrow referent value field should take that value.
+                // Otherwise, the field should be none.
+                (some v: Value | variableHasValueAtStmt[pointOfCreation, ref, v]) => {
+                    some refValue
+                    variableHasValueAtStmt[pointOfCreation, ref, refValue]
+                } else {
+                    no refValue
+                }
             }
         }
     }
@@ -866,11 +867,6 @@ pred cannotUseWhileUninitialized {
     }
 }
 
-// Extract the referent variable of a given value, or none if the value is an Owned.
-fun referent(borrow: Value): Variable {
-    some borrow.borrow_referent => borrow.borrow_referent else borrow.borrow_mut_referent
-}
-
 // The lifetime of a borrow of a value must be contained within the lifetime of the value
 pred borrowAliveDuringValueLifetime {
     // For any kind of borrow (& and &mut)
@@ -935,8 +931,10 @@ inst optimizer_9statement {
 run {
     validProgramStructure
     // lifetimesCorrect
-    // not satisfiesBorrowChecking
+    // satisfiesBorrowChecking
+
+    some borrow: Borrow | some borrow.borrow_referent_value.borrow_referent_value
 } 
 // for exactly 9 Statement, exactly 3 Variable, exactly 3 Value, 5 Type, 5 Int
-for 7 Statement, 5 Int
+for exactly 6 Statement, 5 Int
 for optimizer_9statement
