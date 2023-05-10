@@ -39,10 +39,12 @@ abstract sig Value {
 
 sig Owned extends Value {}
 sig Borrow extends Value {
-    borrow_referent: one Variable 
+    borrow_referent: one Variable,
+    borrow_referent_value: lone Value
 }
 sig BorrowMut extends Value {
-    borrow_mut_referent: one Variable 
+    borrow_mut_referent: one Variable,
+    borrow_mut_referent_value: lone Value
 }
 
 // ============================== Statements ==============================
@@ -376,6 +378,13 @@ pred innerScopeValid {
     }
 }
 
+// Determines if the given statement is the one that creates the given value.
+pred valueCreated[statement: Statement, value: Value] {
+    // Only initialize/update statements can create values
+    statement.initial_value = value or 
+    statement.new_value = value
+}
+
 // Determines if the given statement assigns to the variable (either by initializing,
 // updating, or doing a move).
 pred assignsToVar[assignment: Statement, variable: Variable] {
@@ -521,6 +530,41 @@ pred passesTypeCheck {
     }
 }
 
+// Ensures that the chain of values connected by the `borrow_referent_value` and 
+// `borrow_mut_referent_value` fields is properly constrained.
+pred validBorrowChain {
+    all borrow: Borrow | {
+        some pointOfCreation: Statement | {
+            valueCreated[pointOfCreation, borrow]
+
+            (some referentValue: Value | variableHasValueAtStmt[pointOfCreation, borrow.borrow_referent, referentValue]) => {
+                some borrow.borrow_referent_value
+                variableHasValueAtStmt[pointOfCreation, borrow.borrow_referent, borrow.borrow_referent_value]
+            } else {
+                no borrow.borrow_referent_value
+            }
+        }
+    }
+    all borrowMut: BorrowMut | {
+        some pointOfCreation: Statement | {
+            valueCreated[pointOfCreation, borrowMut]
+
+            (some referentValue: Value | variableHasValueAtStmt[pointOfCreation, borrowMut.borrow_mut_referent, referentValue]) => {
+                some borrowMut.borrow_mut_referent_value
+                variableHasValueAtStmt[pointOfCreation, borrowMut.borrow_mut_referent, borrowMut.borrow_mut_referent_value]
+            } else {
+                no borrowMut.borrow_mut_referent_value
+            }
+        }
+    }
+}
+
+// Determines if the target value is reachable via a chain of borrows from the start.
+// I.e., You could dereference the start value some number of times to get to the target.
+pred borrowReachable[target: Value, start: Value] {
+    reachable[target, start, borrow_referent_value, borrow_mut_referent_value]
+}
+
 pred validProgramStructure {
     innerScopeValid
     sequentialStatements
@@ -531,16 +575,12 @@ pred validProgramStructure {
     uniqueInitialization
     correctMoveValue
     passesTypeCheck
+    validBorrowChain
 }
 
 // ============================== Lifetimes ==============================
 
-// Determines if the given statement is the one that creates the given value.
-pred valueCreated[statement: Statement, value: Value] {
-    // Only initialize/update statements can create values
-    statement.initial_value = value or 
-    statement.new_value = value
-}
+
 
 // Determines if this statement is the last usage of the given variable, while 
 // it is holding the given value. I.e., if there are later uses of the variable,
@@ -684,6 +724,8 @@ pred borrowLifetime[borrow: Borrow] {
     // The start of lifetime is the point of creation
     valueCreated[borrow.value_lifetime.begin, borrow]
 
+    // FIXME: Same issue as borrowMut: end of lifetime
+
     // Look for statement that is the _latest_ (as in, most late) use of _any_ 
     // variable that is reachable via move from the initial variable for the borrow
     some holdingVar: Variable | {
@@ -711,6 +753,19 @@ pred borrowLifetime[borrow: Borrow] {
 pred borrowMutLifetime[borrowMut: BorrowMut] {
     // The start of lifetime is the point of creation
     valueCreated[borrowMut.value_lifetime.begin, borrowMut]
+
+    // FIXME: The end of lifetime of a borrow should be the last use of any value 
+    // from which this borrow is reachable by following a chain of borrows.
+    // The lifetime end can't be extended arbitrarily though
+    // E.g. &a can be reached through &mut &a and &&mut &a.
+    // - Potential implementation: Add a field on Value that relates borrows to the *value* 
+    //   being borrowed, and use `reachable` to determine reachability
+
+    // If a usage of variable v2 is going to be the end of lifetime for a borrow v1:
+    //      - The value of the inner borrow must be reachable via the borrow chain from 
+    //        the value of v2 at this usage  
+    //      - The usage must be in the scope of the variable from which the outer borrow
+    //        was constructed (i.e. the borrow_referent field of the outer borrow)
 
     // The end is the last use of the last variable this value is moved to
     some lastVar: Variable | {
@@ -879,7 +934,9 @@ inst optimizer_9statement {
 
 run {
     validProgramStructure
-    lifetimesCorrect
-    not satisfiesBorrowChecking
-} for exactly 9 Statement, exactly 3 Variable, exactly 3 Value, 5 Type, 5 Int
+    // lifetimesCorrect
+    // not satisfiesBorrowChecking
+} 
+// for exactly 9 Statement, exactly 3 Variable, exactly 3 Value, 5 Type, 5 Int
+for 7 Statement, 5 Int
 for optimizer_9statement
