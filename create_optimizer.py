@@ -34,13 +34,9 @@ PARTIAL_INSTANCE_TEMPLATE = """
 inst optimizer_{0}statement {{
     Program = `Program0
     Statement in {1}
-    // Manually break the symmetry on which statement is first; if there is one,
-    // it is always `Statement0.
+    // Manually break the symmetry on which statement is first; if there is one, it is always `Statement0.
     program_start in `Program0 -> `Statement0 
     // Manually break the symmetry on which statement follows another. 
-    //   (I don't think it would be safe to have just a linear order as the
-    //    upper bound? So this just forces the "next" statement to be later 
-    //    in our enumeration.)
     next in {2}
     inner_scope in {2}
 }}

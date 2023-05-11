@@ -721,17 +721,18 @@ pred ownedLifetime[owned: Owned] {
 // Determine if the given outer borrow contains the borrow nested within it, and 
 // the given statement is the last use of the outer borrow
 pred outerBorrowUse[borrow: Value, outerBorrow: Value, useOfOuterBorrow: Statement] {
-    some outerBorrowHoldingVar: Variable | {
-        // The borrow is reachable from the outer borrow
-        borrowReachable[borrow, outerBorrow] or outerBorrow = borrow 
+    // The borrow is reachable from the outer borrow
+    borrowReachable[borrow, outerBorrow] or outerBorrow = borrow 
 
-        // This statement is some use of a holding variable of the outer borrow 
-        variableUseOrInit[outerBorrowHoldingVar, useOfOuterBorrow]
+    // The outer borrow is either created at this statement, or read
+    (valueCreated[useOfOuterBorrow, outerBorrow] or 
+    (some outerBorrowHoldingVar: Variable | {
+        readUseOfVariable[outerBorrowHoldingVar, useOfOuterBorrow]
         variableHasValueAtStmt[useOfOuterBorrow, outerBorrowHoldingVar, outerBorrow]
+    }))
 
-        // The use needs to be in the scope of the variable from which the outer borrow was created
-        inScopeOfVariable[useOfOuterBorrow, referent[outerBorrow]]
-    }
+    // The use needs to be in the scope of the variable from which the outer borrow was created
+    inScopeOfVariable[useOfOuterBorrow, referent[outerBorrow]]
 }
 
 // Constrain the end of lifetime for a given borrow (either & or &mut).
@@ -918,15 +919,36 @@ inst optimizer_9statement {
             `Statement8->none
 }
 
+// run {
+//     validProgramStructure
+//     lifetimesCorrect
+//     // satisfiesBorrowChecking
+
+//     // Look for a triple borrow
+//     some borrow: Borrow | {
+//         some borrow.borrow_referent_value.borrow_referent_value.borrow_referent_value
+//     }
+// } 
+// for exactly 8 Statement, exactly 4 Variable, exactly 4 Value, 5 Type, 5 Int
+// for optimizer_9statement
+
 run {
     validProgramStructure
     lifetimesCorrect
     // satisfiesBorrowChecking
 
-    // Look for a triple borrow
-    some borrow: Borrow | {
-        some borrow.borrow_referent_value.borrow_referent_value.borrow_referent_value
+    some disj v1, v2: Value | {
+        some v1.borrow_referent
+        some v2.borrow_referent
     }
-} 
-for exactly 8 Statement, exactly 4 Variable, exactly 4 Value, 5 Type, 5 Int
+
+    // A borrow is moved out of in the last statement
+    some last: Statement | {
+        no last.next
+        no last.inner_scope
+        no last.destination
+        isBorrowType[last.source.variable_type]
+    }
+}
+for exactly 7 Statement, exactly 3 Variable, exactly 3 Value, exactly 2 Type, 5 Int
 for optimizer_9statement

@@ -38,6 +38,9 @@ exactly 7 Statement, exactly 3 Variable, exactly 3 Value, 5 Type: 3.5 min transl
 
 exactly 8 Statement, exactly 3 Variable, exactly 3 Value, 5 Type: 3.5 min translation, 12 seconds solving
 
+for exactly 8 Statement, exactly 4 Variable, exactly 4 Value, 5 Type, 5 Int
+with triple borrow: 10 min translation, 30 sec solving
+
 # Bugs
 
 # Questions
