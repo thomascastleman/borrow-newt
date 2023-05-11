@@ -59,30 +59,21 @@ pred modificationWhileBorrowed {
 
 test suite for satisfiesBorrowChecking {
     test expect {
-        // // Vacuity check for borrow checking - is it even satisfiable
-        // borrowCheckVacuity: {
-        //     validAndBorrowChecks
-        // } 
-        // for 7 Statement
-        // for optimizer_7statement
-        // is sat
+        // Vacuity check for borrow checking - is it even satisfiable
+        borrowCheckVacuity: {
+            validAndBorrowChecks
+        } 
+        for 7 Statement
+        for optimizer_7statement
+        is sat
 
-        // // Important to also check that it is possible to *fail* borrow checking for otherwise valid programs.
-        // borrowCheckFailVacuity: {
-        //     validAndFailsBorrowCheck
-        // }
-        // for 7 Statement
-        // for optimizer_7statement
-        // is sat
-
-        // FIXME: This has UNSAT result, but this should satisfy it:
-        // let a;
-        // a = Box::new(0)
-        // let b; 
-        // b = &a;
-        // let c;
-        // c = &a;
-        // drop(b);
+        // Important to also check that it is possible to *fail* borrow checking for otherwise valid programs.
+        borrowCheckFailVacuity: {
+            validAndFailsBorrowCheck
+        }
+        for 7 Statement
+        for optimizer_7statement
+        is sat
 
         // Multiple borrows (&) of a given variable can exist at the same time.
         // This checks that we didn't overconstrain borrow checking to prevent

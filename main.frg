@@ -919,36 +919,10 @@ inst optimizer_9statement {
             `Statement8->none
 }
 
-// run {
-//     validProgramStructure
-//     lifetimesCorrect
-//     // satisfiesBorrowChecking
-
-//     // Look for a triple borrow
-//     some borrow: Borrow | {
-//         some borrow.borrow_referent_value.borrow_referent_value.borrow_referent_value
-//     }
-// } 
-// for exactly 8 Statement, exactly 4 Variable, exactly 4 Value, 5 Type, 5 Int
-// for optimizer_9statement
-
 run {
     validProgramStructure
     lifetimesCorrect
-    // satisfiesBorrowChecking
-
-    some disj v1, v2: Value | {
-        some v1.borrow_referent
-        some v2.borrow_referent
-    }
-
-    // A borrow is moved out of in the last statement
-    some last: Statement | {
-        no last.next
-        no last.inner_scope
-        no last.destination
-        isBorrowType[last.source.variable_type]
-    }
-}
-for exactly 7 Statement, exactly 3 Variable, exactly 3 Value, exactly 2 Type, 5 Int
-for optimizer_9statement
+    satisfiesBorrowChecking
+} 
+for exactly 9 Statement, exactly 3 Variable, 6 Value, 7 Type, 5 Int
+for optimizer_9statement 
