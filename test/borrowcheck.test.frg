@@ -1,7 +1,7 @@
 #lang forge "final" "jWRoVmMudTkyxClS"
 
-open "main.frg"
-open "optimizers.frg"
+open "../main.frg"
+open "../optimizers.frg"
 
 pred validAndBorrowChecks {
     validProgramStructure

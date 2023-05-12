@@ -1,7 +1,7 @@
 #lang forge "final" "jWRoVmMudTkyxClS"
 
-open "main.frg"
-open "optimizers.frg"
+open "../main.frg"
+open "../optimizers.frg"
 
 // Determines if the instance contains a pointer that outlives the value it points to.
 pred danglingPointer {
