@@ -172,5 +172,17 @@ test suite for satisfiesBorrowChecking {
         for 7 Statement
         for optimizer_7statement
         is unsat
+
+        // It is possible for a value to be created in an inner scope, and live past the end of that scope
+        valueSurvivesInnerScope: {
+            validAndBorrowChecks
+
+            some value: Value | {
+                not statementReachableInclusive[value.value_lifetime.end, value.value_lifetime.begin]
+            }
+        }
+        for 7 Statement
+        for optimizer_7statement
+        is sat
     }
 }
