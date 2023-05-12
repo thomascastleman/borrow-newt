@@ -1,10 +1,14 @@
 const d3 = require("d3");
 d3.selectAll("svg > *").remove();
 
+const SHOW_LINE_NUMBERS = true; // Whether to show line numbers
+const EXPLICIT_LET_SCOPES = true; // Whether to show explicit curly braces/indentation for `let` scopes
 const SHOW_LIFETIME_BOXES = true; // Whether to show the bounding boxes around lifetime regions
 const SHOW_LABELS = true; // Whether to show additional metadata about the instance, for debugging
 const LABELS_OFFSET = 50; // How much to the right of the program should the statement labels appear
-const BASE_OFFSET = 20; // How much to offset in the X/Y by default so that the program isn't partially cut off.
+const BASE_X_OFFSET = 35; // How much to offset in the X by default so that the program isn't partially cut off.
+const BASE_Y_OFFSET = 20; // How much to offset in the Y by default so that the program isn't partially cut off.
+const LINE_NO_OFFSET = 10; // How much to offset line numbers from left of window
 const LINE_HEIGHT = 20; // The height of each line of text
 const INDENT_AMOUNT = 20; // Size of indentation
 const CENTERING_OFFSET = 5; // Offset for vertically centering the lifetime bounding boxes
@@ -134,13 +138,25 @@ function convertToLines(starting_statement, lines, indent_level) {
 
     // If there is an inner scope, convert that whole thing to text, add to text
     if (hasField(curr_statement, inner_scope_field)) {
-      lines.push(new ProgramLine("{", indent_level, curr_statement));
-      convertToLines(
-        curr_statement.join(inner_scope_field),
-        lines,
-        indent_level + 1
-      );
-      lines.push(new ProgramLine("}", indent_level, curr_statement));
+      const isLet = hasField(curr_statement, declared_variable_field);
+
+      if (!isLet || EXPLICIT_LET_SCOPES) {
+        // Show scope explicitly with surrounding braces and indentation
+        lines.push(new ProgramLine("{", indent_level, curr_statement));
+        convertToLines(
+          curr_statement.join(inner_scope_field),
+          lines,
+          indent_level + 1
+        );
+        lines.push(new ProgramLine("}", indent_level, curr_statement));
+      } else {
+        // Use same indent level, no curly braces
+        convertToLines(
+          curr_statement.join(inner_scope_field),
+          lines,
+          indent_level
+        );
+      }
     }
 
     // Move to the next statement
@@ -215,11 +231,22 @@ function valuesFromLines(lines) {
 // Display the text of the given program as lines of Rust code
 function visualizeLines(lines, programWidth) {
   for (let i = 0; i < lines.length; i++) {
-    const xOffset = BASE_OFFSET + lines[i].indent_level * INDENT_AMOUNT;
-    const yOffset = BASE_OFFSET + i * LINE_HEIGHT;
+    const xOffset = BASE_X_OFFSET + lines[i].indent_level * INDENT_AMOUNT;
+    const yOffset = BASE_Y_OFFSET + i * LINE_HEIGHT;
 
     let lineContent = lines[i].text;
     const statement = lines[i].statement;
+
+    if (SHOW_LINE_NUMBERS) {
+      d3.select(svg)
+        .append("text")
+        .style("fill", "gray")
+        .style("font-family", "monospace")
+        .style("font-size", "16")
+        .attr("x", LINE_NO_OFFSET)
+        .attr("y", yOffset)
+        .text(i + 1);
+    }
 
     // Show the visualized content of the statement
     d3.select(svg)
@@ -251,7 +278,7 @@ function visualizeLines(lines, programWidth) {
         .style("fill", "gray")
         .style("font-family", "monospace")
         .style("font-size", "16")
-        .attr("x", BASE_OFFSET + programWidth + LABELS_OFFSET)
+        .attr("x", BASE_X_OFFSET + programWidth + LABELS_OFFSET)
         .attr("y", yOffset)
         .text(label);
     }
@@ -294,8 +321,8 @@ function visualizeLifetimes(lines, programWidth) {
   // Display what the lifetime is for each value in the instance,
   // below the program visualization.
   for (let i = 0; i < values.length; i++) {
-    const labelXOffset = BASE_OFFSET;
-    const labelYOffset = BASE_OFFSET + (lines.length + i + 1) * LINE_HEIGHT;
+    const labelXOffset = BASE_X_OFFSET;
+    const labelYOffset = BASE_Y_OFFSET + (lines.length + i + 1) * LINE_HEIGHT;
 
     const lifetime = values[i].join(value_lifetime_field);
     const beginStmt = lifetime.join(begin_field);
@@ -310,7 +337,7 @@ function visualizeLifetimes(lines, programWidth) {
       // Draw a box around the lifetime region
       d3.select(svg)
         .append("rect")
-        .attr("x", BASE_OFFSET)
+        .attr("x", BASE_X_OFFSET)
         .attr("y", CENTERING_OFFSET + beginOffset)
         .attr(
           "width",

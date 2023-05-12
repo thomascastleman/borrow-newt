@@ -9,10 +9,10 @@
   - 15 Statement ran for an hour without any results
   - Try 10 Statement? 11?
 
-- [ ] Visualization
+- [x] Visualization
 
-  - [ ] Add flag for removing indentation + explicit braces from scope of `let` statements
-  - [ ] Line numbers in visualization
+  - [x] Add flag for removing indentation + explicit braces from scope of `let` statements
+  - [x] Line numbers in visualization
 
 - [x] Testing
   - [x] Owned value is created in inner scope and lives into outer scope is sat

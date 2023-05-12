@@ -919,6 +919,15 @@ inst optimizer_9statement {
             `Statement8->none
 }
 
+// Programs that DO borrow check
+run {
+    validProgramStructure
+    lifetimesCorrect
+    satisfiesBorrowChecking
+} 
+for exactly 6 Statement, 3 Variable, 3 Value
+for optimizer_9statement 
+
 // Programs that do NOT borrow check
 // run {
 //     validProgramStructure
@@ -927,16 +936,3 @@ inst optimizer_9statement {
 // } 
 // for exactly 6 Statement, 3 Variable, 3 Value
 // for optimizer_9statement 
-
-run {
-    validProgramStructure
-    lifetimesCorrect
-
-    borrowMutsAreUnique
-    not cannotChangeBorrowedVariable
-    cannotUseWhileUninitialized
-    borrowAliveDuringValueLifetime
-} 
-for exactly 8 Statement, 5 Int //, 3 Variable, 3 Value
-for optimizer_9statement 
-
