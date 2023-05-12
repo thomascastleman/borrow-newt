@@ -2,21 +2,10 @@
 
 - [ ] Optimizations for efficiency
 
-- [ ] Splitting everything into multiple .frg files based on the comments dividing functionality
-
 - [ ] Try very large instances
 
   - 15 Statement ran for an hour without any results
   - Try 10 Statement? 11?
-
-- [x] Visualization
-
-  - [x] Add flag for removing indentation + explicit braces from scope of `let` statements
-  - [x] Line numbers in visualization
-
-- [x] Testing
-  - [x] Owned value is created in inner scope and lives into outer scope is sat
-  - [x] Try to verify no dangling pointers under borrow checking
 
 # Efficiency
 

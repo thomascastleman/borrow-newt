@@ -1,7 +1,11 @@
 #lang forge "final" "jWRoVmMudTkyxClS"
 
-open "../main.frg"
-open "../optimizers.frg"
+open "../model/sigs.frg"
+open "../model/optimizers.frg"
+open "../model/util.frg"
+open "../model/structure.frg"
+open "../model/lifetimes.frg"
+open "../model/borrowcheck.frg"
 
 pred validAndBorrowChecks {
     validProgramStructure

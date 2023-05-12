@@ -1,7 +1,9 @@
 #lang forge "final" "jWRoVmMudTkyxClS"
 
-open "../main.frg"
-open "../optimizers.frg"
+open "../model/sigs.frg"
+open "../model/optimizers.frg"
+open "../model/util.frg"
+open "../model/structure.frg"
 
 test suite for isBefore {
     test expect {

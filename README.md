@@ -112,3 +112,25 @@ error[E0505]: cannot move out of `v2` because it is borrowed
 9 |             drop(v1);
   |                  -- borrow later used here
 ```
+
+## Installation & Usage
+
+First, [install Forge](https://csci1710.github.io/forge-documentation/getting-started/installation.html) and its dependencies.
+
+To look at instances, add `run` statements to `model/main.frg` or use the ones already there and then run (from the
+project root directory):
+
+```bash
+racket model/main.frg
+```
+
+To visualize instances in Sterling, copy the script from `scripts/visualize.js` into the script window
+on SVG mode and click Run.
+
+Tests are found in the `test` directory. You can run them with (for instance):
+
+```bash
+racket test/structure.test.frg
+```
+
+Note that doing any of this may take a while to terminate.
